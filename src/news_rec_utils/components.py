@@ -1,25 +1,14 @@
 from pathlib import Path
 from typing import Optional, Any
-from functools import partial
-from collections.abc import Iterable
 import numpy as np
-import torch
-from .config import NewsDataset, DataSubset, NEWS_TEXT_MAXLEN
 from .pipeline import PipelineComponent, check_req_keys
 from .modeling_utils import (
     get_classification_head,
     get_weighted_sum_model,
-    get_model_and_tokenizer,
     get_final_attention_model,
-    get_embed_from_model,
-    get_model_eval,
 )
 from .data_utils import (
-    load_dataset,
     split_impressions_and_history,
-    NewsTextDataset,
-    eval_collate_fn,
-    EmbeddingDataset,
 )
 from .data_model_helper import (
     get_embeddings,
@@ -88,10 +77,12 @@ class ClassificationComponent(PipelineComponent):
         log_dir: Optional[Path] = None,
         ckpt_dir: Optional[Path] = None,
         num_epochs: int = 5,
+        exp_name: str = "",
         rng=np.random.default_rng(1234),
     ):
         self.model = get_classification_head(model_path)
         self.num_epochs = num_epochs
+        self.exp_name = exp_name
         self.rng = rng
         self.log_dir = log_dir
         self.ckpt_dir = ckpt_dir
@@ -129,11 +120,14 @@ class ClassificationComponent(PipelineComponent):
             val_context_dict["labels"],
             self.log_dir,
             self.ckpt_dir,
+            self.exp_name,
             self.rng,
         )
         classification_trainer.train(self.num_epochs)
         if self.ckpt_dir:
-            self.model = get_classification_head(self.ckpt_dir / "Best_model.pt")
+            self.model = get_classification_head(
+                self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
+            )
 
 
 class AttentionWeightComponent(PipelineComponent):
@@ -158,11 +152,13 @@ class AttentionWeightComponent(PipelineComponent):
         ckpt_dir: Optional[Path] = None,
         weight_ckpt_dir: Optional[Path] = None,
         num_epochs=5,
+        exp_name: str = "",
         rng=np.random.default_rng(1234),
     ):
         self.attention_model = get_final_attention_model(attention_model_path)
         self.weight_model = get_weighted_sum_model(weight_model_path)
         self.num_epochs = num_epochs
+        self.exp_name = exp_name
         self.rng = rng
         self.log_dir = log_dir
         self.ckpt_dir = ckpt_dir
@@ -194,8 +190,6 @@ class AttentionWeightComponent(PipelineComponent):
         assert val_context_dict, "We need the validation data"
         check_req_keys(self.train_required_keys, context_dict)
         check_req_keys(self.train_required_keys, val_context_dict)
-        print("History_bool sum", context_dict["history_bool"].sum())
-        print("length of history len list", len(context_dict["history_len_list"]))
 
         imp_len_list = list(context_dict["impression_len_list"])
         val_imp_len_list = list(val_context_dict["impression_len_list"])
@@ -223,14 +217,15 @@ class AttentionWeightComponent(PipelineComponent):
             self.log_dir,
             self.ckpt_dir,
             self.weight_ckpt_dir,
+            self.exp_name,
             self.rng,
         )
         attention_weight_trainer.train(self.num_epochs)
         if self.ckpt_dir:
             self.attention_model = get_final_attention_model(
-                self.ckpt_dir / "Best_model.pt"
+                self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
             )
         if self.weight_ckpt_dir:
             self.weight_model = get_weighted_sum_model(
-                self.weight_ckpt_dir / "Best_model.pt"
+                self.weight_ckpt_dir / f"Best_model_{self.exp_name}.pt"
             )

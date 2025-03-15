@@ -16,9 +16,7 @@ from .data_utils import (
 )
 from .config import (
     NEWS_TEXT_MAXLEN,
-    CLASSIFICATION_MODEL_BATCH_SIZE,
     NUM_WORKERS,
-    ATTENTION_MODEL_BATCH_SIZE,
     DEVICE,
 )
 from .modeling_utils import (
@@ -28,6 +26,10 @@ from .modeling_utils import (
     ClassificationHead,
     FinalAttention,
     WeightedSumModel,
+)
+from .batch_size_finder import (
+    get_classification_inference_batch_size,
+    get_attention_inference_batch_size,
 )
 
 
@@ -47,10 +49,10 @@ def get_embeddings(
 def get_classification_preds(
     news_embeddings: torch.Tensor, model: ClassificationHead
 ) -> np.ndarray:
+    batch_size = get_classification_inference_batch_size(model)
+    print(f"Batch size for classification model inference {batch_size}")
     embedding_dataset = EmbeddingDataset(news_embeddings)
-    dataloader = DataLoader(
-        embedding_dataset, batch_size=CLASSIFICATION_MODEL_BATCH_SIZE, shuffle=False
-    )
+    dataloader = DataLoader(embedding_dataset, batch_size=batch_size, shuffle=False)
     return get_model_eval(dataloader, model).squeeze(dim=-1).numpy()
 
 
@@ -71,9 +73,11 @@ def get_final_attention_eval(
     model: FinalAttention,
 ):
     attention_dataset = FinalAttentionEvalDataset(history_rev_index, history_len_list)
+    batch_size = get_attention_inference_batch_size(model)
+    print(f"Batch size for attention model inference {batch_size}")
     attention_dataloader = DataLoader(
         attention_dataset,
-        batch_size=ATTENTION_MODEL_BATCH_SIZE,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=NUM_WORKERS,
         collate_fn=partial(

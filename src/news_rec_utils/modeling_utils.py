@@ -17,7 +17,6 @@ from tqdm import tqdm
 from .config import (
     DEVICE,
     EMBEDDING_DIM,
-    CLASSIFICATION_MODEL_BATCH_SIZE,
     NUM_WORKERS,
     TORCH_DTYPE,
 )
@@ -81,10 +80,10 @@ class ClassificationHead(torch.nn.Module):
         self.linear_2 = torch.nn.Linear(in_features=hidden_dim, out_features=hidden_dim)
         self.linear_3 = torch.nn.Linear(in_features=hidden_dim, out_features=out_dim)
 
-    def forward(self, x):
-        x = F.relu(self.linear_1(x))
-        x = F.relu(self.linear_2(x))
-        return F.tanh(self.linear_3(x))
+    def forward(self, embeddings):
+        embeddings = F.relu(self.linear_1(embeddings))
+        embeddings = F.relu(self.linear_2(embeddings))
+        return F.tanh(self.linear_3(embeddings))
 
 
 def get_classification_head(model_path: Optional[Path] = None):

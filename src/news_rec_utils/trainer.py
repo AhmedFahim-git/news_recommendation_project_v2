@@ -10,12 +10,7 @@ from torch.optim.adamw import AdamW
 import torch.nn.functional as F
 from tqdm import tqdm
 from .config import (
-    NewsDataset,
-    DataSubset,
-    EMBEDDING_DIM,
-    CLASSIFICATION_MODEL_BATCH_SIZE,
     DEVICE,
-    ATTENTION_MODEL_BATCH_SIZE,
     NUM_WORKERS,
 )
 from .data_utils import (
@@ -23,6 +18,10 @@ from .data_utils import (
     rank_group_preds,
     FinalAttentionTrainDataset,
     final_attention_train_collate_fn,
+)
+from .batch_size_finder import (
+    get_classification_train_batch_size,
+    get_attention_train_batch_size,
 )
 from .modeling_utils import ClassificationHead, FinalAttention, WeightedSumModel
 from .data_model_helper import (
@@ -46,11 +45,13 @@ class ClassificationModelTrainer:
         val_labels: np.ndarray,
         log_dir: Optional[Path] = None,
         ckpt_dir: Optional[Path] = None,
+        exp_name: str = "",
         rng: np.random.Generator = np.random.default_rng(1234),
     ):
         self.ckpt_dir = ckpt_dir
         self.log_dir = log_dir
         self.rng = rng
+        self.exp_name = exp_name
         self.train_dataset = ClassificationTrainDataset(
             train_embeddings,
             train_rev_index,
@@ -67,15 +68,24 @@ class ClassificationModelTrainer:
         self.val_impression_len_list = val_impression_len_list
         self.val_labels = val_labels
 
-        self.train_dataloader = DataLoader(
-            self.train_dataset,
-            batch_size=CLASSIFICATION_MODEL_BATCH_SIZE,
-            shuffle=True,
-            num_workers=NUM_WORKERS,
-        )
         self.model = model
 
         self.optimizer = AdamW(self.model.parameters(), lr=1e-6)
+
+        self.train_batch_size = (
+            get_classification_train_batch_size(self.model, self.optimizer) // 2
+        )
+
+        print(
+            f"Batch size for training Classification model is {self.train_batch_size}"
+        )
+
+        self.train_dataloader = DataLoader(
+            self.train_dataset,
+            batch_size=self.train_batch_size,
+            shuffle=True,
+            num_workers=NUM_WORKERS,
+        )
         self.loss_fn = torch.nn.MarginRankingLoss(2)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, patience=2
@@ -138,6 +148,7 @@ class ClassificationModelTrainer:
                         json.dumps(
                             {
                                 "timestamp": datetime.now().isoformat(),
+                                "exp_name": self.exp_name,
                                 "epoch": i + 1,
                                 "scores": train_eval_score,
                                 "loss": train_epoch_loss,
@@ -150,20 +161,24 @@ class ClassificationModelTrainer:
                         json.dumps(
                             {
                                 "timestamp": datetime.now().isoformat(),
+                                "exp_name": self.exp_name,
                                 "epoch": i + 1,
                                 "scores": val_eval_score,
                             }
                         )
                         + "\n"
                     )
-            mean_val_score = float(np.mean(list(val_eval_score.values())))
+            mean_val_score = float(np.mean(list(val_eval_score.values())[:-1]))
             self.scheduler.step(mean_val_score)
             if self.ckpt_dir:
                 self.ckpt_dir.mkdir(parents=True, exist_ok=True)
                 torch.save(self.model.state_dict(), self.ckpt_dir / f"Epoch_{i+1}.pt")
                 if mean_val_score > best_val_score:
                     best_val_score = mean_val_score
-                    torch.save(self.model.state_dict(), self.ckpt_dir / "Best_model.pt")
+                    torch.save(
+                        self.model.state_dict(),
+                        self.ckpt_dir / f"Best_model_{self.exp_name}.pt",
+                    )
             self.train_dataset.reset()
 
 
@@ -189,14 +204,30 @@ class AttentionWeightTrainer:
         log_dir: Optional[Path] = None,
         ckpt_dir: Optional[Path] = None,
         weight_ckpt_dir: Optional[Path] = None,
+        exp_name: str = "",
         rng: np.random.Generator = np.random.default_rng(1234),
     ):
         self.rng = rng
         self.log_dir = log_dir
+        self.exp_name = exp_name
         self.ckpt_dir = ckpt_dir
         self.weight_ckpt_dir = weight_ckpt_dir
         self.attention_model = attention_model
         self.weight_model = weight_model
+
+        self.optimizer = AdamW(
+            list(self.attention_model.parameters())
+            + list(self.weight_model.parameters()),
+            lr=1e-5,
+        )
+
+        self.loss_fn = torch.nn.MarginRankingLoss(2)
+        self.train_batch_size = get_attention_train_batch_size(
+            self.attention_model, self.optimizer
+        )
+        print(
+            f"Batch size for training Classification model is {self.train_batch_size}"
+        )
 
         self.train_dataset = FinalAttentionTrainDataset(
             train_history_rev_index,
@@ -204,7 +235,7 @@ class AttentionWeightTrainer:
             train_news_rev_index,
             train_impression_len_list,
             train_labels,
-            ATTENTION_MODEL_BATCH_SIZE,
+            self.train_batch_size,
             self.rng,
         )
         self.train_news_embedding = train_news_embeddings
@@ -221,8 +252,8 @@ class AttentionWeightTrainer:
             attention_model=self.attention_model,
             weight_model=self.weight_model,
         )
-        self.train_labels = val_labels
-        self.train_impression_len_list = val_impression_len_list
+        self.train_labels = train_labels
+        self.train_impression_len_list = train_impression_len_list
 
         self.val_eval_score_func = partial(
             get_cos_sim_final_score,
@@ -238,16 +269,9 @@ class AttentionWeightTrainer:
         self.val_labels = val_labels
         self.val_impression_len_list = val_impression_len_list
 
-        self.optimizer = AdamW(
-            list(self.attention_model.parameters())
-            + list(self.weight_model.parameters()),
-            lr=1e-5,
-        )
-
-        self.loss_fn = torch.nn.MarginRankingLoss(2)
         self.train_dataloader = DataLoader(
             self.train_dataset,
-            batch_size=ATTENTION_MODEL_BATCH_SIZE,
+            batch_size=self.train_batch_size,
             pin_memory=True,
             num_workers=NUM_WORKERS,
             shuffle=False,
@@ -335,6 +359,7 @@ class AttentionWeightTrainer:
                         json.dumps(
                             {
                                 "timestamp": datetime.now().isoformat(),
+                                "exp_name": self.exp_name,
                                 "epoch": i + 1,
                                 "scores": train_eval_score,
                                 "loss": train_epoch_loss,
@@ -347,13 +372,14 @@ class AttentionWeightTrainer:
                         json.dumps(
                             {
                                 "timestamp": datetime.now().isoformat(),
+                                "exp_name": self.exp_name,
                                 "epoch": i + 1,
                                 "scores": val_eval_score,
                             }
                         )
                         + "\n"
                     )
-            mean_val_score = float(np.mean(list(val_eval_score.values())))
+            mean_val_score = float(np.mean(list(val_eval_score.values())[:-1]))
             if self.ckpt_dir:
                 self.ckpt_dir.mkdir(parents=True, exist_ok=True)
                 torch.save(
@@ -362,7 +388,7 @@ class AttentionWeightTrainer:
                 if mean_val_score > best_val_score:
                     torch.save(
                         self.attention_model.state_dict(),
-                        self.ckpt_dir / "Best_model.pt",
+                        self.ckpt_dir / f"Best_model_{self.exp_name}.pt",
                     )
             if self.weight_ckpt_dir:
                 self.weight_ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -373,7 +399,7 @@ class AttentionWeightTrainer:
                 if mean_val_score > best_val_score:
                     torch.save(
                         self.weight_model.state_dict(),
-                        self.weight_ckpt_dir / "Best_model.pt",
+                        self.weight_ckpt_dir / f"Best_model_{self.exp_name}.pt",
                     )
             if mean_val_score > best_val_score:
                 best_val_score = mean_val_score
