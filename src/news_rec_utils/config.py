@@ -24,11 +24,13 @@ NEWS_TEXT_MAXLEN = 600  # Actually close to 600
 
 EMBEDDING_DIM = 768
 
+IMPRESSION_MAXLEN = 1024
+
 NEWS_CLASSIFICATION_PROMPT = "Please analyze the following news article to inform if the user would read the following news article.\nThe news article is: "
 
 TORCH_DTYPE = torch.float32
 
-NUM_WORKERS = 2
+NUM_WORKERS = 4
 
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability(DEVICE)
@@ -37,8 +39,8 @@ if torch.cuda.is_available():
     elif compute_capability >= (6, 0):
         TORCH_DTYPE = torch.float16
 
-CLASSIFICATION_MODEL_BATCH_SIZE = 1024
-ATTENTION_MODEL_BATCH_SIZE = 200
+# CLASSIFICATION_MODEL_BATCH_SIZE = 1024
+# ATTENTION_MODEL_BATCH_SIZE = 200
 
 torch.manual_seed(1234)
 torch.cuda.manual_seed_all(1234)
