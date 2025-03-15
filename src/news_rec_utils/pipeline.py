@@ -55,7 +55,7 @@ class Pipeline:
             if self.use_cache and cache_file_name.is_file():
                 loaded_file = joblib.load(cache_file_name)
                 context_dict = loaded_file["context_dict"]
-                val_context_dict = loaded_file["context_dict"]
+                val_context_dict = loaded_file["val_context_dict"]
             else:
                 if training:
                     component.train(context_dict, val_context_dict)
