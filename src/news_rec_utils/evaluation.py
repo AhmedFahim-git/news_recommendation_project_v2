@@ -1,13 +1,14 @@
 from typing import Optional
 from pathlib import Path
 import json
+from concurrent.futures import ProcessPoolExecutor
 from collections.abc import Sequence
 import numpy as np
 from sklearn.metrics import roc_auc_score
-from tqdm import trange
+from tqdm import tqdm
+from .config import NUM_WORKERS
 
 
-# Try concurrent processpool executor
 # Scoring functions adapted from https://github.com/msnews/MIND/blob/master/evaluate.py
 def dcg_score(y_true, y_score, k=10):
     order = np.argsort(y_score)[::-1]
@@ -30,43 +31,42 @@ def mrr_score(y_true, y_score):
     return np.sum(rr_score) / np.sum(y_true)
 
 
+def score_row(label_sub_rank):
+    labels, sub_ranks, ind = label_sub_rank
+    lt_len = float(len(labels))
+
+    y_true = np.array(labels, dtype="float32")
+    y_score = []
+
+    for rank in sub_ranks:
+        score_rslt = 1.0 / rank
+        if score_rslt < 0 or score_rslt > 1:
+            raise ValueError(
+                "Line-{}: score_rslt should be int from 0 to {}".format(ind, lt_len)
+            )
+        y_score.append(score_rslt)
+
+    auc = roc_auc_score(y_true, y_score)
+    mrr = mrr_score(y_true, y_score)
+    ndcg5 = ndcg_score(y_true, y_score, 5)
+    ndcg10 = ndcg_score(y_true, y_score, 10)
+
+    return auc, mrr, ndcg5, ndcg10
+
+
 def score(
     preds_input: Sequence[Sequence[int]] | np.ndarray,
     labels_input: Sequence[Sequence[int]] | np.ndarray,
     imp_ids: Sequence[str] = [],
     debug_dir: Optional[Path] = None,
 ) -> dict[str, float]:
-    aucs = []
-    mrrs = []
-    ndcg5s = []
-    ndcg10s = []
+    pool_submit = zip(labels_input, preds_input, range(len(preds_input)))
 
-    for ind in trange(len(preds_input)):
-        labels = labels_input[ind]
-        sub_ranks = preds_input[ind]
+    with ProcessPoolExecutor(NUM_WORKERS) as executor:
+        aucs, mrrs, ndcg5s, ndcg10s = zip(
+            *tqdm(executor.map(score_row, pool_submit), total=len(preds_input))
+        )
 
-        lt_len = float(len(labels))
-
-        y_true = np.array(labels, dtype="float32")
-        y_score = []
-
-        for rank in sub_ranks:
-            score_rslt = 1.0 / rank
-            if score_rslt < 0 or score_rslt > 1:
-                raise ValueError(
-                    "Line-{}: score_rslt should be int from 0 to {}".format(ind, lt_len)
-                )
-            y_score.append(score_rslt)
-
-        auc = roc_auc_score(y_true, y_score)
-        mrr = mrr_score(y_true, y_score)
-        ndcg5 = ndcg_score(y_true, y_score, 5)
-        ndcg10 = ndcg_score(y_true, y_score, 10)
-
-        aucs.append(auc)
-        mrrs.append(mrr)
-        ndcg5s.append(ndcg5)
-        ndcg10s.append(ndcg10)
     if debug_dir and (len(imp_ids) > 0):
         try:
             assert len(imp_ids) == len(
@@ -93,4 +93,5 @@ def score(
         "mrr": np.mean(mrrs).item(),
         "ndcg5": np.mean(ndcg5s).item(),
         "ndcg10": np.mean(ndcg10s).item(),
+        "num_samples": len(preds_input),
     }
