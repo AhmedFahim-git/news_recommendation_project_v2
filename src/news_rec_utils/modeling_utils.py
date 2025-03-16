@@ -176,7 +176,7 @@ def get_text_embed_eval(model: PreTrainedModel, input_dataloader: DataLoader):
             text_embed_list.append(
                 pool_fn(
                     model(**inputs.to(DEVICE)).last_hidden_state.detach().cpu(),
-                    inputs["attention_mask"],
+                    inputs["attention_mask"].cpu(),
                 )
             )
             gc.collect()
