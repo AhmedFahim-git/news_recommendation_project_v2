@@ -11,9 +11,9 @@ def dummy_text_inputs_outputs(
             "attention_mask": torch.ones((batch_size, max_len), dtype=torch.int).to(
                 device
             ),
-            "token_type_ids": torch.zeros((batch_size, max_len), dtype=torch.int).to(
-                device
-            ),
+            # "token_type_ids": torch.zeros((batch_size, max_len), dtype=torch.int).to(
+            #     device
+            # ),
         },
         "outputs": torch.ones((batch_size,), dtype=torch.float32, device=device),
     }
