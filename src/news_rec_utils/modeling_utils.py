@@ -2,6 +2,7 @@ from typing import Optional, Callable
 from pathlib import Path
 from collections.abc import Iterable
 from contextlib import nullcontext
+import gc
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -180,6 +181,8 @@ def get_text_embed_eval(model: PreTrainedModel, input_dataloader: DataLoader):
                 .detach()
                 .cpu()
             )
+            gc.collect()
+            torch.cuda.empty_cache()
     return torch.concatenate(text_embed_list)
 
 
