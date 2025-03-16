@@ -63,8 +63,8 @@ def get_model_and_tokenizer(path: str, device=DEVICE):
     model: PreTrainedModel = AutoModel.from_pretrained(
         path,
         trust_remote_code=True,
-        unpad_inputs=True,
-        use_memory_efficient_attention=True,
+        # unpad_inputs=True,
+        # use_memory_efficient_attention=True,
         # torch_dtype=torch.float16,
     ).to(device)
     assert isinstance(model, PreTrainedModel), "Model is of different type"
