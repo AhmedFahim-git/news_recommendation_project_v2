@@ -175,11 +175,9 @@ def get_text_embed_eval(model: PreTrainedModel, input_dataloader: DataLoader):
         for inputs in tqdm(input_dataloader, desc="Embedding Text"):
             text_embed_list.append(
                 pool_fn(
-                    model(**inputs.to(DEVICE)).last_hidden_state,
+                    model(**inputs.to(DEVICE)).last_hidden_state.detach().cpu(),
                     inputs["attention_mask"],
                 )
-                .detach()
-                .cpu()
             )
             gc.collect()
             torch.cuda.empty_cache()
