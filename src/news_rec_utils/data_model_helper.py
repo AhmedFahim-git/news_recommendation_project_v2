@@ -175,3 +175,35 @@ def get_final_score(
     scores[history_bool.repeat(imp_len_list)] = history_score
     grouped_scores = rank_group_preds(scores, impression_len_list)
     return {"scores": scores, "grouped_scores": grouped_scores}
+
+
+def get_final_only_attention_score(
+    history_rev_index: np.ndarray,
+    history_len_list: np.ndarray,
+    news_rev_index: np.ndarray,
+    impression_len_list: np.ndarray,
+    news_embeddings: torch.Tensor,
+    classification_score: np.ndarray,
+    history_bool: pd.Series,
+    attention_model: FinalAttention,
+):
+    scores = classification_score[news_rev_index]
+    imp_len_list = list(impression_len_list)
+
+    history_score = (
+        get_cos_sim_scores(
+            history_rev_index,
+            history_len_list,
+            news_rev_index[history_bool.repeat(imp_len_list)],
+            impression_len_list[history_bool],
+            news_embeddings,
+            attention_model,
+        )
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    scores[history_bool.repeat(imp_len_list)] = history_score
+    grouped_scores = rank_group_preds(scores, impression_len_list)
+    return {"scores": scores, "grouped_scores": grouped_scores}

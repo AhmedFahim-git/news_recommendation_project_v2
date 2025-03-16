@@ -116,18 +116,43 @@ class FinalAttention(torch.nn.Module):
     def __init__(self, embed_dim: int, hidden_dim: int):
         super().__init__()
         self.linear1 = torch.nn.Linear(embed_dim, embed_dim)
-        self.linear2 = torch.nn.Linear(embed_dim, hidden_dim)
-        self.linear3 = torch.nn.Linear(hidden_dim, 1, bias=False)
+        self.dropout1 = torch.nn.Dropout(0.1)
+        self.linear2 = torch.nn.Linear(embed_dim, embed_dim)
+        self.dropout2 = torch.nn.Dropout(0.1)
+        self.linear3 = torch.nn.Linear(embed_dim, embed_dim)
+        self.dropout3 = torch.nn.Dropout(0.1)
+        self.linear4 = torch.nn.Linear(embed_dim, hidden_dim)
+        self.linear5 = torch.nn.Linear(hidden_dim, 1, bias=False)
 
     def forward(self, embeddings: torch.Tensor, attention_mask: torch.Tensor):
-        x = F.relu(self.linear1(embeddings))
-        weights = self.linear2(x)
-        weights = self.linear3(weights)
+        x = self.dropout1(F.relu(self.linear1(embeddings)))
+        x = self.dropout2(F.relu(self.linear2(embeddings)))
+        x = self.dropout3(F.relu(self.linear3(embeddings)))
+        weights = self.linear4(x)
+        weights = self.linear5(weights)
         weights = weights.squeeze(2)
         weights = torch.exp(weights) * attention_mask
         weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-10)
         weights = weights.unsqueeze(-1)
         return (x * weights).sum(dim=1)
+
+
+# class FinalAttention(torch.nn.Module):
+#     def __init__(self, embed_dim: int, hidden_dim: int):
+#         super().__init__()
+#         self.linear1 = torch.nn.Linear(embed_dim, embed_dim)
+#         self.linear2 = torch.nn.Linear(embed_dim, hidden_dim)
+#         self.linear3 = torch.nn.Linear(hidden_dim, 1, bias=False)
+
+#     def forward(self, embeddings: torch.Tensor, attention_mask: torch.Tensor):
+#         x = F.relu(self.linear1(embeddings))
+#         weights = self.linear2(x)
+#         weights = self.linear3(weights)
+#         weights = weights.squeeze(2)
+#         weights = torch.exp(weights) * attention_mask
+#         weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-10)
+#         weights = weights.unsqueeze(-1)
+#         return (x * weights).sum(dim=1)
 
 
 def get_final_attention_model(model_path: Optional[Path] = None):
@@ -187,7 +212,7 @@ def get_model_eval(
     result_list = []
     model.eval()
     with torch.no_grad():
-        for item in dataloader:
+        for item in tqdm(dataloader, desc="Model Inference"):
             if isinstance(item, tuple):
                 result_list.append(
                     model(*map(lambda x: x.to(DEVICE), item)).detach().cpu()

@@ -190,7 +190,11 @@ def split_impressions(impressions: Sequence[str]):
 
 
 def split_impressions_pos_neg(
-    rng: np.random.Generator, grouped_news_rev_index: np.ndarray, labels: np.ndarray
+    rng: np.random.Generator,
+    grouped_news_rev_index: np.ndarray,
+    labels: np.ndarray,
+    max_neg_ratio: Optional[float] = None,
+    max_pos_ratio: Optional[float] = None,
 ):
     pos_ind, neg_ind, len_list = [], [], []
     for i, row in enumerate(labels):
@@ -198,18 +202,34 @@ def split_impressions_pos_neg(
         num_pos = sum(row)
         num_neg = len(row) - num_pos
         max_len = max(num_pos, num_neg)
+        if max_neg_ratio or max_pos_ratio:
+            if max_neg_ratio and (num_neg * max_neg_ratio > num_pos):
+                max_len = int(num_pos / max_neg_ratio)
+            elif max_pos_ratio and (num_pos * max_pos_ratio > num_neg):
+                max_len = int(num_neg / max_pos_ratio)
         for j, label in enumerate(row):
             news_rev_ind = grouped_news_rev_index[i][j]
             if label == 0:
                 temp_neg.append(news_rev_ind)
             else:
                 temp_pos.append(news_rev_ind)
-        temp_pos = rng.permutation(
-            np.append(temp_pos, rng.choice(temp_pos, max_len - num_pos))
-        )
-        temp_neg = rng.permutation(
-            np.append(temp_neg, rng.choice(temp_neg, max_len - num_neg))
-        )
+        if num_neg >= max_len:
+            temp_neg = rng.choice(temp_neg, size=max_len, replace=False)
+            temp_pos = rng.permutation(
+                np.append(temp_pos, rng.choice(temp_pos, max_len - num_pos))
+            )
+        else:
+            temp_pos = rng.choice(temp_pos, size=max_len, replace=False)
+            temp_neg = rng.permutation(
+                np.append(temp_neg, rng.choice(temp_neg, max_len - num_neg))
+            )
+        # else:
+        #     temp_pos = rng.permutation(
+        #         np.append(temp_pos, rng.choice(temp_pos, max_len - num_pos))
+        #     )
+        #     temp_neg = rng.permutation(
+        #         np.append(temp_neg, rng.choice(temp_neg, max_len - num_neg))
+        #     )
 
         pos_ind.extend(temp_pos.tolist())
         neg_ind.extend(temp_neg.tolist())
@@ -346,7 +366,9 @@ class FinalAttentionTrainDataset(Dataset):
         impression_len_list: np.ndarray,
         labels: np.ndarray,
         batch_size: int,
-        rng: np.random.Generator,
+        max_neg_raio: Optional[float] = None,
+        max_pos_ratio: Optional[float] = None,
+        rng: np.random.Generator = np.random.default_rng(1234),
     ):
         assert len(history_len_list) == len(
             impression_len_list
@@ -360,6 +382,8 @@ class FinalAttentionTrainDataset(Dataset):
         self.news_rev_index = news_rev_index
         self.impression_len_list = impression_len_list
         self.rng = rng
+        self.max_neg_ratio = max_neg_raio
+        self.max_pos_ratio = max_pos_ratio
         self.reset()
 
     def __len__(self):
@@ -380,6 +404,8 @@ class FinalAttentionTrainDataset(Dataset):
                 self.news_rev_index, self.impression_len_list
             )[permuted_index],
             labels=self.labels[permuted_index],
+            max_neg_ratio=self.max_neg_ratio,
+            max_pos_ratio=self.max_pos_ratio,
         )
         pos_neg_indices[2] = permuted_index[pos_neg_indices[2]]
         num_batches = -(pos_neg_indices.shape[1] // -self.batch_size)
