@@ -18,13 +18,18 @@ class DataSubset(Enum):
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-MODEL_PATH = "Alibaba-NLP/gte-base-en-v1.5"
+# MODEL_PATH = "Alibaba-NLP/gte-base-en-v1.5"
+MODEL_PATH = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
 
 NEWS_TEXT_MAXLEN = 600  # Actually close to 600
 
-EMBEDDING_DIM = 768
+EMBEDDING_DIM = 1536
 
-IMPRESSION_MAXLEN = 1024
+REDUCED_DIM = 768
+
+IMPRESSION_MAXLEN = 600  # Actually close to 600
+
+NUM_HIDDEN_LAYERS = 2
 
 NEWS_CLASSIFICATION_PROMPT = "Please analyze the following news article to inform if the user would read the following news article.\nThe news article is: "
 

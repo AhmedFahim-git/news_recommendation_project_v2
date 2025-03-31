@@ -26,6 +26,7 @@ from .modeling_utils import (
     ClassificationHead,
     FinalAttention,
     WeightedSumModel,
+    store_embed_from_model,
 )
 from .batch_size_finder import (
     get_classification_inference_batch_size,
@@ -44,6 +45,10 @@ def get_embeddings(
     return get_embed_from_model(
         model, news_text_dataset, NEWS_TEXT_MAXLEN, text_collate_fn
     )
+
+
+def get_reduced_dim_embeds(embeddings: torch.Tensor, model: torch.nn.Module):
+    return model(embeddings.to(DEVICE)).detach().cpu()
 
 
 def get_classification_preds(
@@ -70,7 +75,7 @@ def get_final_attention_eval(
     history_rev_index: np.ndarray,
     history_len_list: np.ndarray,
     news_embeddings: torch.Tensor,
-    model: FinalAttention,
+    model: torch.nn.Module,
 ):
     attention_dataset = FinalAttentionEvalDataset(history_rev_index, history_len_list)
     batch_size = get_attention_inference_batch_size(model)
@@ -87,13 +92,44 @@ def get_final_attention_eval(
     return get_model_eval(attention_dataloader, model)
 
 
+def get_cos_sim_reduce_scores(
+    history_rev_index: np.ndarray,
+    history_len_list: np.ndarray,
+    news_rev_index: np.ndarray,
+    impression_len_list: np.ndarray,
+    news_embeddings: torch.Tensor,
+    attention_model: torch.nn.Module,
+    reduce_model: torch.nn.Module,
+):
+    assert len(history_len_list) == len(
+        impression_len_list
+    ), "Number of rows should be consistent"
+    assert sum(impression_len_list) == len(
+        news_rev_index
+    ), "Number of impressions should match length of impression list"
+    news_embeddings = get_reduced_dim_embeds(news_embeddings, reduce_model)
+    history_embeds = get_final_attention_eval(
+        history_rev_index, history_len_list, news_embeddings, attention_model
+    )
+    # history_embeds = get_reduced_dim_embeds(history_embeds, reduce_model)
+    grouped_rev_index = group_items(news_rev_index, impression_len_list)
+    result_list = []
+    for i, sub_list in enumerate(grouped_rev_index):
+        result_list.append(
+            F.cosine_similarity(
+                news_embeddings[sub_list].to(DEVICE), history_embeds[i].to(DEVICE)
+            )
+        )
+    return torch.cat(result_list)
+
+
 def get_cos_sim_scores(
     history_rev_index: np.ndarray,
     history_len_list: np.ndarray,
     news_rev_index: np.ndarray,
     impression_len_list: np.ndarray,
     news_embeddings: torch.Tensor,
-    model: FinalAttention,
+    model: torch.nn.Module,
 ):
     assert len(history_len_list) == len(
         impression_len_list
@@ -113,10 +149,6 @@ def get_cos_sim_scores(
             )
         )
     return torch.cat(result_list)
-    # return F.cosine_similarity(
-    #     history_embeds.repeat_interleave(torch.tensor(impression_len_list)),
-    #     news_embeddings[news_rev_index],
-    # )
 
 
 def get_cos_sim_final_score(
@@ -126,7 +158,7 @@ def get_cos_sim_final_score(
     impression_len_list: np.ndarray,
     news_embeddings: torch.Tensor,
     classification_score: np.ndarray,
-    attention_model: FinalAttention,
+    attention_model: torch.nn.Module,
     weight_model: WeightedSumModel,
 ) -> np.ndarray:
     return (
@@ -155,7 +187,7 @@ def get_final_score(
     news_embeddings: torch.Tensor,
     classification_score: np.ndarray,
     history_bool: pd.Series,
-    attention_model: FinalAttention,
+    attention_model: torch.nn.Module,
     weight_model: WeightedSumModel,
 ):
     scores = classification_score[news_rev_index]
@@ -185,7 +217,7 @@ def get_final_only_attention_score(
     news_embeddings: torch.Tensor,
     classification_score: np.ndarray,
     history_bool: pd.Series,
-    attention_model: FinalAttention,
+    attention_model: torch.nn.Module,
 ):
     scores = classification_score[news_rev_index]
     imp_len_list = list(impression_len_list)
@@ -207,3 +239,53 @@ def get_final_only_attention_score(
     scores[history_bool.repeat(imp_len_list)] = history_score
     grouped_scores = rank_group_preds(scores, impression_len_list)
     return {"scores": scores, "grouped_scores": grouped_scores}
+
+
+def get_final_only_reduce_attention_score(
+    history_rev_index: np.ndarray,
+    history_len_list: np.ndarray,
+    news_rev_index: np.ndarray,
+    impression_len_list: np.ndarray,
+    news_embeddings: torch.Tensor,
+    classification_score: np.ndarray,
+    history_bool: pd.Series,
+    attention_model: torch.nn.Module,
+    reduce_model: torch.nn.Module,
+):
+    scores = classification_score[news_rev_index]
+    imp_len_list = list(impression_len_list)
+
+    history_score = (
+        get_cos_sim_reduce_scores(
+            history_rev_index,
+            history_len_list,
+            news_rev_index[history_bool.repeat(imp_len_list)],
+            impression_len_list[history_bool],
+            news_embeddings,
+            attention_model=attention_model,
+            reduce_model=reduce_model,
+        )
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    scores[history_bool.repeat(imp_len_list)] = history_score
+    grouped_scores = rank_group_preds(scores, impression_len_list)
+    return {"scores": scores, "grouped_scores": grouped_scores}
+
+
+def store_embeddings(
+    model_path: str,
+    news_list: Iterable[str],
+    news_text_dict: dict[str, str],
+    db_name: str,
+):
+    news_text_dataset = NewsTextDataset(news_list, news_text_dict)
+    model, tokenizer = get_model_and_tokenizer(model_path)
+    text_collate_fn = partial(
+        eval_collate_fn, tokenizer=tokenizer, max_len=NEWS_TEXT_MAXLEN
+    )
+    store_embed_from_model(
+        model, news_text_dataset, NEWS_TEXT_MAXLEN, text_collate_fn, db_name
+    )

@@ -8,8 +8,10 @@ from news_rec_utils.components import (
     EmbeddingsComponent,
     ClassificationComponent,
     AttentionWeightComponent,
-    AttentionComponent,
     NewAttentionComponent,
+    AttentionComponent,
+    LoadEmbeddingComponent,
+    NewAttentionReduceComponent,
 )
 from news_rec_utils.config import MODEL_PATH, NewsDataset
 from news_rec_utils.data_utils import load_dataset
@@ -20,7 +22,8 @@ def main():
     data_dir = Path("data")
     log_dir = Path("logs")
     ckpt_root_dir = Path("models")
-    exp_name = "ranking_loss_new_attn_individual_no_weight"
+    save_dir = Path("embeddings")
+    exp_name = "ranking_loss_gte_1_5_new_reduce_attn_individual_no_weight"
 
     rng = np.random.default_rng(1234)
     train_behaviors, train_news_text_dict = load_dataset(
@@ -35,7 +38,8 @@ def main():
     )
 
     transform_component = TransformData()
-    embedding_component = EmbeddingsComponent(MODEL_PATH)
+    # embedding_component = EmbeddingsComponent(MODEL_PATH)
+    load_component = LoadEmbeddingComponent(save_dir)
 
     classification_component = ClassificationComponent(
         # model_path=ckpt_root_dir / "classification_head" / "Best_model.pt",
@@ -62,7 +66,6 @@ def main():
     #     exp_name=exp_name,
     #     rng=rng,
     # )
-
     # attention_only_component = AttentionComponent(
     #     log_dir=log_dir,
     #     ckpt_dir=ckpt_root_dir / "attention_model",
@@ -72,30 +75,41 @@ def main():
     #     rng=rng,
     # )
 
-    new_attention = NewAttentionComponent(
+    # new_attention = NewAttentionComponent(
+    #     log_dir=log_dir,
+    #     ckpt_dir=ckpt_root_dir / "new_attention_model",
+    #     num_epochs=5,
+    #     rng=rng,
+    # )
+    new_reduce_attention = NewAttentionReduceComponent(
         log_dir=log_dir,
         ckpt_dir=ckpt_root_dir / "new_attention_model",
-        num_epochs=10,
+        reduce_ckpt_dir=ckpt_root_dir / "reducing_model",
+        num_epochs=2,
         rng=rng,
     )
 
     train_pipeline = Pipeline(
-        "train_small",
+        "train_gte_1_5_small",
         [
             ("init_transform", transform_component),
-            ("model_embed", embedding_component),
+            ("load_embedding", load_component),
+            # ("model_embed", embedding_component),
             ("classification", classification_component),
             # ("attention", attention_component),
             # ("only_attention", attention_only_component),
-            ("new_attention", new_attention),
+            # ("new_attention", new_attention),
+            ("reduce_attenion", new_reduce_attention),
         ],
     )
     context_dict, val_context_dict = train_pipeline.train(
         context_dict={
+            "news_dataset": NewsDataset.MINDsmall_train,
             "behaviors": train_behaviors,
             "news_text_dict": train_news_text_dict,
         },
         val_context_dict={
+            "news_dataset": NewsDataset.MINDsmall_dev,
             "behaviors": val_behaviors,
             "news_text_dict": val_news_text_dict,
         },

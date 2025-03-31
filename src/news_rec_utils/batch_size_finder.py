@@ -6,11 +6,42 @@ from .dummy import (
     dummy_text_inputs_outputs,
     dummy_classificaion_inputs_outputs,
     dummy_attention_inputs_outputs,
+    dummy_attention_attention_inputs_outputs,
 )
 
 
 # Keys are ModelConfig_str(optimizer_type)_task_max_len. Value is batch size
 BATCH_SIZES = dict()
+
+
+def dummy_attention_attention_train_func(
+    token_model: torch.nn.Module,
+    final_attention: torch.nn.Module,
+    optimizer,
+    dummy_func,
+    batch_size: int,
+):
+    optimizer.zero_grad()
+    dummy_res = dummy_func(
+        batch_size=batch_size,
+    )
+    first_res = token_model(**dummy_res["inputs"]["token_attention"])
+    split_array = torch.tensor_split(
+        first_res, dummy_res["inputs"]["final_attention"]["split_array"]
+    )
+    final_res = final_attention(
+        torch.stack(split_array[:-2]),
+        dummy_res["inputs"]["final_attention"]["attention_mask"],
+    )
+    # print(final_res.shape)
+    res = torch.nn.functional.cosine_similarity(
+        final_res.repeat((2, 1)), torch.concatenate(split_array[-2:])
+    )
+    torch.nn.MarginRankingLoss(2)(
+        *torch.chunk(res, 2),
+        torch.tensor([1], device="cuda", dtype=torch.float32),
+    ).backward()
+    optimizer.zero_grad()
 
 
 def dummy_group_text_inference_func(
@@ -55,10 +86,10 @@ def check_batch_size(test_func, batch_size: int):
         success = True
     except torch.cuda.OutOfMemoryError as e:
         success = False
-    except Exception as e:
-        error = True
-        print(e)
-        print("Return None for batch size")
+    # except Exception as e:
+    #     error = True
+    #     print(e)
+    #     print("Return None for batch size")
     finally:
         gc.collect()
         torch.cuda.empty_cache()
@@ -113,7 +144,7 @@ def get_text_inference_batch_size(model: torch.nn.Module, max_len: int):
                 max_len=max_len,
             )
         )
-    return BATCH_SIZES[key]
+    return BATCH_SIZES[key] - 20
 
 
 def get_classification_train_batch_size(model: torch.nn.Module, optimizer):
@@ -151,6 +182,25 @@ def get_classification_inference_batch_size(model: torch.nn.Module):
             )
         )
     return BATCH_SIZES[key]
+
+
+def get_attention_attention_train_batch_size(
+    token_model: torch.nn.Module, final_attention: torch.nn.Module, optimizer
+):
+    model_part = "attention_attention"
+    task_type = "TRAIN"
+    key = model_part + task_type
+    if key not in BATCH_SIZES:
+        BATCH_SIZES[key] = get_batch_size(
+            partial(
+                dummy_attention_attention_train_func,
+                token_model=token_model,
+                final_attention=final_attention,
+                optimizer=optimizer,
+                dummy_func=dummy_attention_attention_inputs_outputs,
+            )
+        )
+    return BATCH_SIZES[key] - 5
 
 
 def get_attention_train_batch_size(model: torch.nn.Module, optimizer):

@@ -4,6 +4,8 @@ import argparse
 from typing import Any, Callable
 from collections.abc import Sequence, Iterable
 from abc import ABC, abstractmethod
+import sqlite3
+import io
 import pandas as pd
 import numpy as np
 from scipy.stats import rankdata
@@ -15,7 +17,7 @@ from transformers.tokenization_utils_fast import (
     PreTrainedTokenizerFast,
     BatchEncoding,
 )
-from .config import DataSubset, NewsDataset
+from .config import DataSubset, NewsDataset, IMPRESSION_MAXLEN, NEWS_TEXT_MAXLEN
 
 
 def load_dataset(
@@ -458,7 +460,7 @@ class ClassificationTrainDataset(Dataset):
 
 
 def pad_to_maxlen(
-    grouped_items: np.ndarray | Sequence[Sequence[int]],
+    grouped_items: np.ndarray | Sequence[np.ndarray] | Sequence[Sequence[int]],
 ) -> dict[str, np.ndarray]:
     len_list = list(map(len, grouped_items))
     max_len = max(len_list)
@@ -484,6 +486,39 @@ def pad_to_maxlen(
     return {
         "indices": np.stack(indices, dtype=np.int32),
         "attention_mask": np.stack(attention_mask, dtype=np.int32),
+    }
+
+
+def tensor_pad_to_maxlen(
+    grouped_items: Sequence[torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    len_list = list(map(len, grouped_items))
+    max_len = max(len_list)
+    embeddings = []
+    attention_mask = []
+    for i, length in enumerate(len_list):
+        embeddings.append(
+            torch.nn.functional.pad(
+                grouped_items[i],
+                pad=(0, 0, 0, max_len - length),
+                mode="constant",
+                value=0,
+            )
+        )
+        attention_mask.append(
+            torch.nn.functional.pad(
+                torch.ones(length, dtype=torch.int32),
+                pad=(0, max_len - length),
+                mode="constant",
+                value=0,
+            )
+        )
+    final_embeddings = torch.stack(embeddings)
+    return {
+        "embeddings": torch.stack(embeddings),
+        "attention_mask": torch.stack(attention_mask).to(
+            device=final_embeddings.device
+        ),
     }
 
 
@@ -553,3 +588,44 @@ def main():
 
     # Call the processing function
     store_processed_data(args.data_dir, dataset_enum)
+
+
+def get_embeds_from_db(db_name: str, indices: Iterable):
+    indices = ",".join([str(i + 1) for i in indices])
+
+    with sqlite3.connect(db_name) as conn:
+        res = conn.execute(
+            f"SELECT data from tensors where id in ({indices});"
+        ).fetchall()
+    tensors = [torch.load(io.BytesIO(i[0]), weights_only=True) for i in res]
+    final_dict = tensor_pad_to_maxlen(tensors)
+    return final_dict
+
+
+def attention_attention_train_collate_fn(input, db_name: str):
+    grouped_history, news_ind_pos, news_ind_neg = zip(*input)
+    len_list = [len(i) for i in grouped_history]
+
+    sum_list = list(np.cumsum(len_list))
+    sum_list = sum_list + [sum_list[-1] + len(news_ind_pos)]
+
+    all_indices = np.concatenate(
+        list(grouped_history) + [news_ind_pos] + [news_ind_neg]
+    )
+    unique_indices, reverse_indices = np.unique(all_indices, return_inverse=True)
+    final_dict = get_embeds_from_db(db_name, unique_indices)
+
+    rev_split = np.split(reverse_indices, sum_list)
+
+    padded_history = pad_to_maxlen(rev_split[:-2])
+    return (
+        final_dict["embeddings"].to(dtype=torch.float32)[:, :NEWS_TEXT_MAXLEN],
+        final_dict["attention_mask"].to(dtype=torch.int32)[:, :NEWS_TEXT_MAXLEN],
+        torch.tensor(padded_history["indices"], dtype=torch.int32)[
+            :, :IMPRESSION_MAXLEN
+        ],
+        torch.tensor(padded_history["attention_mask"], dtype=torch.int32)[
+            :, :IMPRESSION_MAXLEN
+        ],
+        torch.tensor(np.concatenate(rev_split[-2:]), dtype=torch.int32),
+    )

@@ -7,6 +7,9 @@ from .modeling_utils import (
     get_classification_head,
     get_weighted_sum_model,
     get_final_attention_model,
+    get_new_attention_model,
+    get_reducing_model,
+    get_token_attn_model,
 )
 from .data_utils import (
     split_impressions_and_history,
@@ -16,11 +19,15 @@ from .data_model_helper import (
     get_classification_baseline_scores,
     get_final_score,
     get_final_only_attention_score,
+    get_final_only_reduce_attention_score,
+    store_embeddings,
 )
 from .trainer import (
     ClassificationModelTrainer,
     AttentionWeightTrainer,
     AttentionTrainer,
+    AttentionReduceTrainer,
+    AttentionAttentionTrainer,
 )
 
 
@@ -374,3 +381,306 @@ class AttentionComponent(PipelineComponent):
             self.attention_model = get_final_attention_model(
                 self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
             )
+
+
+class NewAttentionReduceComponent(PipelineComponent):
+    required_keys = {
+        "news_embeddings",
+        "impression_rev_ind_array",
+        "impression_len_list",
+        "history_rev_ind_array",
+        "history_len_list",
+        "classification_preds",
+        "history_bool",
+    }
+    train_required_keys = required_keys | {
+        "labels",
+    }
+
+    def __init__(
+        self,
+        attention_model_path: Optional[Path] = None,
+        reduce_model_path: Optional[Path] = None,
+        log_dir: Optional[Path] = None,
+        ckpt_dir: Optional[Path] = None,
+        reduce_ckpt_dir: Optional[Path] = None,
+        num_epochs=5,
+        exp_name: str = "",
+        max_neg_ratio: Optional[float] = None,
+        max_pos_ratio: Optional[float] = None,
+        rng=np.random.default_rng(1234),
+    ):
+        self.attention_model = get_new_attention_model(attention_model_path)
+        self.reduce_model = get_reducing_model(reduce_model_path)
+        self.num_epochs = num_epochs
+        self.exp_name = exp_name
+        self.rng = rng
+        self.log_dir = log_dir
+        self.ckpt_dir = ckpt_dir
+        self.reduce_ckpt_dir = reduce_ckpt_dir
+        self.max_neg_ratio = max_neg_ratio
+        self.max_pos_ratio = max_pos_ratio
+
+    def transform(self, context_dict: dict[str, Any]) -> dict[str, Any]:
+        check_req_keys(self.required_keys, context_dict)
+        new_context_dict = context_dict.copy()
+        new_context_dict.update(
+            get_final_only_reduce_attention_score(
+                history_rev_index=new_context_dict["history_rev_ind_array"][0],
+                history_len_list=new_context_dict["history_len_list"],
+                news_rev_index=new_context_dict["impression_rev_ind_array"][0],
+                impression_len_list=new_context_dict["impression_len_list"],
+                news_embeddings=new_context_dict["news_embeddings"],
+                classification_score=new_context_dict["classification_preds"],
+                history_bool=new_context_dict["history_bool"],
+                attention_model=self.attention_model,
+                reduce_model=self.reduce_model,
+            )
+        )
+        return new_context_dict
+
+    def train(
+        self,
+        context_dict: dict[str, Any],
+        val_context_dict: Optional[dict[str, Any]] = None,
+    ):
+        assert val_context_dict, "We need the validation data"
+        check_req_keys(self.train_required_keys, context_dict)
+        check_req_keys(self.train_required_keys, val_context_dict)
+
+        imp_len_list = list(context_dict["impression_len_list"])
+        val_imp_len_list = list(val_context_dict["impression_len_list"])
+        attention_weight_trainer = AttentionReduceTrainer(
+            attention_model=self.attention_model,
+            reduce_model=self.reduce_model,
+            train_history_rev_index=context_dict["history_rev_ind_array"][0],
+            train_history_len_list=context_dict["history_len_list"],
+            train_news_rev_index=context_dict["impression_rev_ind_array"][0][
+                context_dict["history_bool"].repeat(imp_len_list)
+            ],
+            train_impression_len_list=context_dict["impression_len_list"][
+                context_dict["history_bool"]
+            ],
+            train_news_embeddings=context_dict["news_embeddings"],
+            train_labels=context_dict["labels"][context_dict["history_bool"]],
+            val_history_rev_index=val_context_dict["history_rev_ind_array"][0],
+            val_history_len_list=val_context_dict["history_len_list"],
+            val_news_rev_index=val_context_dict["impression_rev_ind_array"][0][
+                val_context_dict["history_bool"].repeat(val_imp_len_list)
+            ],
+            val_impression_len_list=val_context_dict["impression_len_list"][
+                val_context_dict["history_bool"]
+            ],
+            val_news_embeddings=val_context_dict["news_embeddings"],
+            val_labels=val_context_dict["labels"][val_context_dict["history_bool"]],
+            log_dir=self.log_dir,
+            ckpt_dir=self.ckpt_dir,
+            reduce_ckpt_dir=self.reduce_ckpt_dir,
+            exp_name=self.exp_name,
+            max_neg_ratio=self.max_neg_ratio,
+            max_pos_ratio=self.max_pos_ratio,
+            rng=self.rng,
+        )
+        attention_weight_trainer.train(self.num_epochs)
+        if self.ckpt_dir:
+            self.attention_model = get_new_attention_model(
+                self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
+            )
+        if self.reduce_ckpt_dir:
+            self.reduce_model = get_reducing_model(
+                self.reduce_ckpt_dir / f"Best_model_{self.exp_name}.pt"
+            )
+
+
+class NewAttentionComponent(PipelineComponent):
+    required_keys = {
+        "news_embeddings",
+        "impression_rev_ind_array",
+        "impression_len_list",
+        "history_rev_ind_array",
+        "history_len_list",
+        "classification_preds",
+        "history_bool",
+    }
+    train_required_keys = required_keys | {
+        "labels",
+    }
+
+    def __init__(
+        self,
+        attention_model_path: Optional[Path] = None,
+        log_dir: Optional[Path] = None,
+        ckpt_dir: Optional[Path] = None,
+        num_epochs=5,
+        exp_name: str = "",
+        max_neg_ratio: Optional[float] = None,
+        max_pos_ratio: Optional[float] = None,
+        rng=np.random.default_rng(1234),
+    ):
+        self.attention_model = get_new_attention_model(attention_model_path)
+        self.num_epochs = num_epochs
+        self.exp_name = exp_name
+        self.rng = rng
+        self.log_dir = log_dir
+        self.ckpt_dir = ckpt_dir
+        self.max_neg_ratio = max_neg_ratio
+        self.max_pos_ratio = max_pos_ratio
+
+    def transform(self, context_dict: dict[str, Any]) -> dict[str, Any]:
+        check_req_keys(self.required_keys, context_dict)
+        new_context_dict = context_dict.copy()
+        new_context_dict.update(
+            get_final_only_attention_score(
+                new_context_dict["history_rev_ind_array"][0],
+                new_context_dict["history_len_list"],
+                new_context_dict["impression_rev_ind_array"][0],
+                new_context_dict["impression_len_list"],
+                new_context_dict["news_embeddings"],
+                new_context_dict["classification_preds"],
+                new_context_dict["history_bool"],
+                self.attention_model,
+            )
+        )
+        return new_context_dict
+
+    def train(
+        self,
+        context_dict: dict[str, Any],
+        val_context_dict: Optional[dict[str, Any]] = None,
+    ):
+        assert val_context_dict, "We need the validation data"
+        check_req_keys(self.train_required_keys, context_dict)
+        check_req_keys(self.train_required_keys, val_context_dict)
+
+        imp_len_list = list(context_dict["impression_len_list"])
+        val_imp_len_list = list(val_context_dict["impression_len_list"])
+        attention_weight_trainer = AttentionTrainer(
+            attention_model=self.attention_model,
+            train_history_rev_index=context_dict["history_rev_ind_array"][0],
+            train_history_len_list=context_dict["history_len_list"],
+            train_news_rev_index=context_dict["impression_rev_ind_array"][0][
+                context_dict["history_bool"].repeat(imp_len_list)
+            ],
+            train_impression_len_list=context_dict["impression_len_list"][
+                context_dict["history_bool"]
+            ],
+            train_news_embeddings=context_dict["news_embeddings"],
+            train_labels=context_dict["labels"][context_dict["history_bool"]],
+            val_history_rev_index=val_context_dict["history_rev_ind_array"][0],
+            val_history_len_list=val_context_dict["history_len_list"],
+            val_news_rev_index=val_context_dict["impression_rev_ind_array"][0][
+                val_context_dict["history_bool"].repeat(val_imp_len_list)
+            ],
+            val_impression_len_list=val_context_dict["impression_len_list"][
+                val_context_dict["history_bool"]
+            ],
+            val_news_embeddings=val_context_dict["news_embeddings"],
+            val_labels=val_context_dict["labels"][val_context_dict["history_bool"]],
+            log_dir=self.log_dir,
+            ckpt_dir=self.ckpt_dir,
+            exp_name=self.exp_name,
+            max_neg_ratio=self.max_neg_ratio,
+            max_pos_ratio=self.max_pos_ratio,
+            rng=self.rng,
+        )
+        attention_weight_trainer.train(self.num_epochs)
+        if self.ckpt_dir:
+            self.attention_model = get_new_attention_model(
+                self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
+            )
+
+
+class StoreEmbeddingsComponent(PipelineComponent):
+    required_keys = {"news_list", "news_text_dict"}
+
+    def __init__(self, model_path: str, db_name: str):
+        self.model_path = model_path
+        self.db_name = db_name
+
+    def transform(
+        self,
+        context_dict: dict[str, Any],
+    ) -> dict[str, Any]:
+        check_req_keys(self.required_keys, context_dict)
+
+        new_context_dict = context_dict.copy()
+        store_embeddings(
+            self.model_path,
+            new_context_dict["news_list"],
+            new_context_dict["news_text_dict"],
+            self.db_name,
+        )
+
+        return new_context_dict
+
+
+class AttentionAttentionComponent(PipelineComponent):
+    required_keys = {
+        "impression_rev_ind_array",
+        "impression_len_list",
+        "history_rev_ind_array",
+        "history_len_list",
+        "history_bool",
+    }
+    train_required_keys = required_keys | {
+        "labels",
+    }
+
+    def __init__(
+        self,
+        db_name: str,
+        token_attention_model_path: Optional[Path] = None,
+        final_attention_model_path: Optional[Path] = None,
+        log_dir: Optional[Path] = None,
+        token_ckpt_dir: Optional[Path] = None,
+        final_attn_ckpt_dir: Optional[Path] = None,
+        num_epochs=5,
+        exp_name: str = "",
+        max_neg_ratio: Optional[float] = None,
+        max_pos_ratio: Optional[float] = None,
+        rng=np.random.default_rng(1234),
+    ):
+        self.db_name = db_name
+        self.token_attention = get_token_attn_model(token_attention_model_path)
+        self.final_attention = get_final_attention_model(final_attention_model_path)
+        self.num_epochs = num_epochs
+        self.exp_name = exp_name
+        self.rng = rng
+        self.log_dir = log_dir
+        self.token_ckpt_dir = token_ckpt_dir
+        self.final_attn_ckpt_dir = final_attn_ckpt_dir
+        self.max_neg_ratio = max_neg_ratio
+        self.max_pos_ratio = max_pos_ratio
+
+    def transform(self, context_dict: dict[str, Any]):
+        return context_dict
+
+    def train(
+        self,
+        context_dict: dict[str, Any],
+        val_context_dict: Optional[dict[str, Any]] = None,
+    ):
+        check_req_keys(self.train_required_keys, context_dict)
+        imp_len_list = list(context_dict["impression_len_list"])
+        attn_attn_trainer = AttentionAttentionTrainer(
+            db_name=self.db_name,
+            token_attention_model=self.token_attention,
+            final_attention_model=self.final_attention,
+            train_history_rev_index=context_dict["history_rev_ind_array"][0],
+            train_history_len_list=context_dict["history_len_list"],
+            train_news_rev_index=context_dict["impression_rev_ind_array"][0][
+                context_dict["history_bool"].repeat(imp_len_list)
+            ],
+            train_impression_len_list=context_dict["impression_len_list"][
+                context_dict["history_bool"]
+            ],
+            train_labels=context_dict["labels"][context_dict["history_bool"]],
+            log_dir=self.log_dir,
+            token_ckpt_dir=self.token_ckpt_dir,
+            final_attn_ckpt_dir=self.final_attn_ckpt_dir,
+            exp_name=self.exp_name,
+            max_neg_ratio=self.max_neg_ratio,
+            max_pos_ratio=self.max_pos_ratio,
+            rng=self.rng,
+        )
+        attn_attn_trainer.train(self.num_epochs)
