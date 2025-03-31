@@ -8,6 +8,7 @@ from .dummy import (
     dummy_attention_inputs_outputs,
     dummy_attention_attention_inputs_outputs,
 )
+from .config import NEWS_TEXT_MAXLEN, IMPRESSION_MAXLEN
 
 
 # Keys are ModelConfig_str(optimizer_type)_task_max_len. Value is batch size
@@ -20,10 +21,14 @@ def dummy_attention_attention_train_func(
     optimizer,
     dummy_func,
     batch_size: int,
+    max_len=IMPRESSION_MAXLEN,
+    news_text_maxlen=NEWS_TEXT_MAXLEN,
 ):
     optimizer.zero_grad()
     dummy_res = dummy_func(
         batch_size=batch_size,
+        max_len=max_len,
+        news_text_maxlen=news_text_maxlen,
     )
     first_res = token_model(**dummy_res["inputs"]["token_attention"])
     split_array = torch.tensor_split(
@@ -185,7 +190,11 @@ def get_classification_inference_batch_size(model: torch.nn.Module):
 
 
 def get_attention_attention_train_batch_size(
-    token_model: torch.nn.Module, final_attention: torch.nn.Module, optimizer
+    token_model: torch.nn.Module,
+    final_attention: torch.nn.Module,
+    optimizer,
+    max_len=IMPRESSION_MAXLEN,
+    news_text_maxlen=NEWS_TEXT_MAXLEN,
 ):
     model_part = "attention_attention"
     task_type = "TRAIN"
@@ -198,6 +207,8 @@ def get_attention_attention_train_batch_size(
                 final_attention=final_attention,
                 optimizer=optimizer,
                 dummy_func=dummy_attention_attention_inputs_outputs,
+                max_len=max_len,
+                news_text_maxlen=news_text_maxlen,
             )
         )
     return BATCH_SIZES[key] - 5
