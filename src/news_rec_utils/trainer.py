@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 from typing import Optional
+import sqlite3
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -883,9 +884,11 @@ class AttentionAttentionTrainer:
             max_pos_ratio=max_pos_ratio,
             rng=self.rng,
         )
+        
+        self.connection = sqlite3.connect(db_name)
 
         train_collate_fn = partial(
-            attention_attention_train_collate_fn, db_name=db_name, rng=self.rng
+            attention_attention_train_collate_fn, conn=self.connection, rng=self.rng
         )
 
         self.train_dataloader = DataLoader(
@@ -901,7 +904,8 @@ class AttentionAttentionTrainer:
         self.token_attention_model.train()
         self.final_attention_model.train()
 
-        losses, counts = [], []
+        # losses, counts = [], []
+        running_loss, running_count = 0, 0
         batch_num = 0
         for (
             token_embeds,
@@ -942,10 +946,12 @@ class AttentionAttentionTrainer:
                 max_norm=0.5,
             )
             self.optimizer.step()
-            losses.append(loss.item())
-            counts.append(len(hist_indices))
+            running_loss += loss.item() * len(hist_indices)
+            running_count += len(hist_indices)
+            # losses.append(loss.item())
+            # counts.append(len(hist_indices))
             if (batch_num % 1000) == 0:
-                print(np.dot(losses, counts) / sum(counts))
+                print(running_loss / running_count)
                 if self.token_ckpt_dir:
                     self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
                     torch.save(
@@ -959,7 +965,7 @@ class AttentionAttentionTrainer:
                         self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
                     )
         self.optimizer.zero_grad()
-        train_epoch_loss = np.dot(losses, counts) / sum(counts)
+        train_epoch_loss = running_loss / running_count
         return train_epoch_loss
 
     def train(
@@ -1035,3 +1041,4 @@ class AttentionAttentionTrainer:
                 #     best_val_score = mean_val_score
 
             self.train_dataset.reset()
+        self.connection.close()

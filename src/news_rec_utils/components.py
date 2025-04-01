@@ -603,15 +603,16 @@ class StoreEmbeddingsComponent(PipelineComponent):
     ) -> dict[str, Any]:
         check_req_keys(self.required_keys, context_dict)
 
-        new_context_dict = context_dict.copy()
+        context_dict = context_dict.copy()
         store_embeddings(
             self.model_path,
-            new_context_dict["news_list"],
-            new_context_dict["news_text_dict"],
+            context_dict["news_list"],
+            context_dict["news_text_dict"],
             self.db_name,
         )
+        del context_dict["news_text_dict"]
 
-        return new_context_dict
+        return context_dict
 
 
 class AttentionAttentionComponent(PipelineComponent):

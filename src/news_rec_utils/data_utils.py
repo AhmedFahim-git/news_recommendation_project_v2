@@ -5,6 +5,7 @@ from typing import Any, Callable
 from collections.abc import Sequence, Iterable
 from abc import ABC, abstractmethod
 import sqlite3
+from contextlib import closing
 import io
 import pandas as pd
 import numpy as np
@@ -598,13 +599,11 @@ def main():
     store_processed_data(args.data_dir, dataset_enum)
 
 
-def get_embeds_from_db(db_name: str, indices: Iterable):
+def get_embeds_from_db(conn, indices: Iterable):
     indices = ",".join([str(i + 1) for i in indices])
 
-    with sqlite3.connect(db_name) as conn:
-        res = conn.execute(
-            f"SELECT data from tensors where id in ({indices});"
-        ).fetchall()
+    # with closing(sqlite3.connect(db_name)) as conn:
+    res = conn.execute(f"SELECT data from tensors where id in ({indices});").fetchall()
     tensors = []
     for i in res:
         f = io.BytesIO(i[0])
@@ -615,9 +614,7 @@ def get_embeds_from_db(db_name: str, indices: Iterable):
     return final_dict
 
 
-def attention_attention_train_collate_fn(
-    input, db_name: str, rng=np.random.default_rng(1234)
-):
+def attention_attention_train_collate_fn(input, conn, rng=np.random.default_rng(1234)):
     grouped_history, news_ind_pos, news_ind_neg = zip(*input)
     len_list = [len(i) for i in grouped_history]
 
@@ -628,7 +625,7 @@ def attention_attention_train_collate_fn(
         list(grouped_history) + [news_ind_pos] + [news_ind_neg]
     )
     unique_indices, reverse_indices = np.unique(all_indices, return_inverse=True)
-    final_dict = get_embeds_from_db(db_name, unique_indices)
+    final_dict = get_embeds_from_db(conn, unique_indices)
 
     rev_split = np.split(reverse_indices, sum_list)
 
