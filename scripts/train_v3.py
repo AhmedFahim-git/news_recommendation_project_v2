@@ -30,12 +30,12 @@ def main():
     save_dir = Path("embeddings")
     exp_name = "attn_attn"
     # db_name = "mydb.sqlite"
-    db_name = "/content/drive/MyDrive/my_db/mydb_train.sqlite"
+    db_name = "/content/drive/MyDrive/my_db/mydb_dev.sqlite"
 
     rng = np.random.default_rng(1234)
-    train_behaviors, train_news_text_dict = load_dataset(
+    dev_behaviors, dev_news_text_dict = load_dataset(
         data_dir,
-        NewsDataset.MINDsmall_train,
+        NewsDataset.MINDsmall_dev,
         data_subset=DataSubset.WITH_HISTORY,
         random_state=rng,
         # num_samples=500,
@@ -113,7 +113,7 @@ def main():
         [
             ("init_transform", transform_component),
             ("store_comp", store_emb_comp),
-            ("attn_attn", attn_attn_comp),
+            # ("attn_attn", attn_attn_comp),
             # ("load_embedding", load_component),
             # # ("model_embed", embedding_component),
             # ("classification", classification_component),
@@ -125,9 +125,9 @@ def main():
     )
     train_pipeline.train(
         context_dict={
-            "news_dataset": NewsDataset.MINDsmall_train,
-            "behaviors": train_behaviors,
-            "news_text_dict": train_news_text_dict,
+            "news_dataset": NewsDataset.MINDsmall_dev,
+            "behaviors": dev_behaviors,
+            "news_text_dict": dev_news_text_dict,
         },
     )
     # context_dict, val_context_dict = train_pipeline.train(
