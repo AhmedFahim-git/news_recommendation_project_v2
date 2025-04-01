@@ -211,7 +211,7 @@ def get_attention_attention_train_batch_size(
                 news_text_maxlen=news_text_maxlen,
             )
         )
-    return BATCH_SIZES[key] - 5
+    return BATCH_SIZES[key] - 3
 
 
 def get_attention_train_batch_size(model: torch.nn.Module, optimizer):

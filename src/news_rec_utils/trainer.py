@@ -861,7 +861,7 @@ class AttentionAttentionTrainer:
         self.optimizer = AdamW(
             list(self.token_attention_model.parameters())
             + list(self.final_attention_model.parameters()),
-            lr=1e-5,
+            lr=1e-4,
         )
 
         self.loss_fn = torch.nn.MarginRankingLoss(2)
@@ -885,7 +885,7 @@ class AttentionAttentionTrainer:
         )
 
         train_collate_fn = partial(
-            attention_attention_train_collate_fn, db_name=db_name
+            attention_attention_train_collate_fn, db_name=db_name, rng=self.rng
         )
 
         self.train_dataloader = DataLoader(

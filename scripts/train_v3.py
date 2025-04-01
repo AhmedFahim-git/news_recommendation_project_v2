@@ -21,9 +21,12 @@ from news_rec_utils.evaluation import score
 
 
 def main():
-    data_dir = Path("data")
-    log_dir = Path("logs")
-    ckpt_root_dir = Path("models")
+    # data_dir = Path("data")
+    data_dir = Path("/content/drive/MyDrive/MIND_dataset")
+    # log_dir = Path("logs")
+    log_dir = Path("/content/drive/MyDrive/log_dir")
+    # ckpt_root_dir = Path("models")
+    ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
     save_dir = Path("embeddings")
     exp_name = "attn_attn"
     db_name = "mydb.sqlite"

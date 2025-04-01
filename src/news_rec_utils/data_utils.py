@@ -461,24 +461,34 @@ class ClassificationTrainDataset(Dataset):
 
 def pad_to_maxlen(
     grouped_items: np.ndarray | Sequence[np.ndarray] | Sequence[Sequence[int]],
+    max_length: Optional[int] = None,
+    rng=np.random.default_rng(1234),
 ) -> dict[str, np.ndarray]:
     len_list = list(map(len, grouped_items))
     max_len = max(len_list)
+    if max_length:
+        max_len = min(max_len, max_length)
     indices = []
     attention_mask = []
     for i, length in enumerate(len_list):
+        item = (
+            grouped_items[i]
+            if max_len > length
+            else rng.choice(grouped_items[i], max_len, replace=False)
+        )
+        # item = grouped_items[i] if max_len > length else grouped_items[i][:max_len]
         indices.append(
             np.pad(
-                grouped_items[i],
-                pad_width=(0, max_len - length),
+                item,
+                pad_width=(0, max_len - min(max_len, length)),
                 mode="constant",
                 constant_values=0,
             )
         )
         attention_mask.append(
             np.pad(
-                np.ones(length, dtype=np.int32),
-                pad_width=(0, max_len - length),
+                np.ones(min(max_len, length), dtype=np.int32),
+                pad_width=(0, max_len - min(max_len, length)),
                 mode="constant",
                 constant_values=0,
             )
@@ -602,7 +612,9 @@ def get_embeds_from_db(db_name: str, indices: Iterable):
     return final_dict
 
 
-def attention_attention_train_collate_fn(input, db_name: str):
+def attention_attention_train_collate_fn(
+    input, db_name: str, rng=np.random.default_rng(1234)
+):
     grouped_history, news_ind_pos, news_ind_neg = zip(*input)
     len_list = [len(i) for i in grouped_history]
 
@@ -617,15 +629,13 @@ def attention_attention_train_collate_fn(input, db_name: str):
 
     rev_split = np.split(reverse_indices, sum_list)
 
-    padded_history = pad_to_maxlen(rev_split[:-2])
+    padded_history = pad_to_maxlen(
+        rev_split[:-2], max_length=IMPRESSION_MAXLEN, rng=rng
+    )
     return (
         final_dict["embeddings"].to(dtype=torch.float32)[:, :NEWS_TEXT_MAXLEN],
         final_dict["attention_mask"].to(dtype=torch.int32)[:, :NEWS_TEXT_MAXLEN],
-        torch.tensor(padded_history["indices"], dtype=torch.int32)[
-            :, :IMPRESSION_MAXLEN
-        ],
-        torch.tensor(padded_history["attention_mask"], dtype=torch.int32)[
-            :, :IMPRESSION_MAXLEN
-        ],
+        torch.tensor(padded_history["indices"], dtype=torch.int32),
+        torch.tensor(padded_history["attention_mask"], dtype=torch.int32),
         torch.tensor(np.concatenate(rev_split[-2:]), dtype=torch.int32),
     )

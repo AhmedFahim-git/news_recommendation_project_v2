@@ -21,13 +21,13 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # MODEL_PATH = "Alibaba-NLP/gte-base-en-v1.5"
 MODEL_PATH = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
 
-NEWS_TEXT_MAXLEN = 600  # Actually close to 600
+NEWS_TEXT_MAXLEN = 100  # Actually close to 600
 
 EMBEDDING_DIM = 1536
 
 REDUCED_DIM = 768
 
-IMPRESSION_MAXLEN = 600  # Actually close to 600
+IMPRESSION_MAXLEN = 20  # Actually close to 600
 
 NUM_HIDDEN_LAYERS = 2
 
@@ -35,7 +35,7 @@ NEWS_CLASSIFICATION_PROMPT = "Please analyze the following news article to infor
 
 TORCH_DTYPE = torch.float32
 
-NUM_WORKERS = 4
+NUM_WORKERS = 2
 
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability(DEVICE)
