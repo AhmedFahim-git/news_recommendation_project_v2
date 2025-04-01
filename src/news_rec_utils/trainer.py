@@ -902,6 +902,7 @@ class AttentionAttentionTrainer:
         self.final_attention_model.train()
 
         losses, counts = [], []
+        batch_num = 0
         for (
             token_embeds,
             token_attn_mask,
@@ -909,6 +910,7 @@ class AttentionAttentionTrainer:
             hist_attn_mask,
             news_ind_pos_neg,
         ) in tqdm(self.train_dataloader):
+            batch_num += 1
             self.optimizer.zero_grad()
             first_res = self.token_attention_model(
                 token_embeds.to(DEVICE), token_attn_mask.to(DEVICE)
@@ -942,6 +944,20 @@ class AttentionAttentionTrainer:
             self.optimizer.step()
             losses.append(loss.item())
             counts.append(len(hist_indices))
+            if (batch_num % 5000) == 0:
+                print(np.dot(losses, counts) / sum(counts))
+                if self.token_ckpt_dir:
+                    self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
+                    torch.save(
+                        self.token_attention_model.state_dict(),
+                        self.token_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
+                    )
+                if self.final_attn_ckpt_dir:
+                    self.final_attn_ckpt_dir.mkdir(parents=True, exist_ok=True)
+                    torch.save(
+                        self.final_attention_model,
+                        self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
+                    )
         self.optimizer.zero_grad()
         train_epoch_loss = np.dot(losses, counts) / sum(counts)
         return train_epoch_loss
@@ -950,7 +966,6 @@ class AttentionAttentionTrainer:
         self,
         num_epochs,
     ):
-        best_val_score = -np.inf
         for i in range(num_epochs):
             train_epoch_loss = self.train_one_epoch()
             # train_eval_score = self._get_val_score(
