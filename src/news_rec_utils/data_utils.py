@@ -523,12 +523,10 @@ def tensor_pad_to_maxlen(
                 value=0,
             )
         )
-    final_embeddings = torch.stack(embeddings)
+    # final_embeddings = torch.stack(embeddings)
     return {
         "embeddings": torch.stack(embeddings),
-        "attention_mask": torch.stack(attention_mask).to(
-            device=final_embeddings.device
-        ),
+        "attention_mask": torch.stack(attention_mask),
     }
 
 
@@ -607,7 +605,12 @@ def get_embeds_from_db(db_name: str, indices: Iterable):
         res = conn.execute(
             f"SELECT data from tensors where id in ({indices});"
         ).fetchall()
-    tensors = [torch.load(io.BytesIO(i[0]), weights_only=True) for i in res]
+    tensors = []
+    for i in res:
+        f = io.BytesIO(i[0])
+        tensors.append(torch.load(f, weights_only=True))
+        f.close()
+    # tensors = [torch.load(io.BytesIO(i[0]), weights_only=True) for i in res]
     final_dict = tensor_pad_to_maxlen(tensors)
     return final_dict
 
