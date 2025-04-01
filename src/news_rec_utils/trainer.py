@@ -944,7 +944,7 @@ class AttentionAttentionTrainer:
             self.optimizer.step()
             losses.append(loss.item())
             counts.append(len(hist_indices))
-            if (batch_num % 5000) == 0:
+            if (batch_num % 1000) == 0:
                 print(np.dot(losses, counts) / sum(counts))
                 if self.token_ckpt_dir:
                     self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
