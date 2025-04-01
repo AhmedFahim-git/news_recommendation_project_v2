@@ -10,10 +10,7 @@ from torch.utils.data import DataLoader
 from torch.optim.adamw import AdamW
 import torch.nn.functional as F
 from tqdm import tqdm
-from .config import (
-    DEVICE,
-    NUM_WORKERS,
-)
+from .config import DEVICE, NUM_WORKERS, IMPRESSION_MAXLEN
 from .data_utils import (
     ClassificationTrainDataset,
     rank_group_preds,
@@ -882,9 +879,10 @@ class AttentionAttentionTrainer:
             batch_size=self.train_batch_size,
             max_neg_raio=max_neg_ratio,
             max_pos_ratio=max_pos_ratio,
+            history_maxlen=IMPRESSION_MAXLEN,
             rng=self.rng,
         )
-        
+
         self.connection = sqlite3.connect(db_name)
 
         train_collate_fn = partial(

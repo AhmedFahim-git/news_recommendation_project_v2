@@ -371,7 +371,8 @@ class FinalAttentionTrainDataset(Dataset):
         batch_size: int,
         max_neg_raio: Optional[float] = None,
         max_pos_ratio: Optional[float] = None,
-        rng: np.random.Generator = np.random.default_rng(1234),
+        history_maxlen: Optional[int] = None,
+        rng=np.random.default_rng(1234),
     ):
         assert len(history_len_list) == len(
             impression_len_list
@@ -387,6 +388,7 @@ class FinalAttentionTrainDataset(Dataset):
         self.rng = rng
         self.max_neg_ratio = max_neg_raio
         self.max_pos_ratio = max_pos_ratio
+        self.history_maxlen = history_maxlen
         self.reset()
 
     def __len__(self):
@@ -394,7 +396,20 @@ class FinalAttentionTrainDataset(Dataset):
 
     def __getitem__(self, idx):
         return (
-            self.group_history[self.pos_neg_indices[idx, 2]],
+            (
+                self.group_history[self.pos_neg_indices[idx, 2]]
+                if self.history_maxlen
+                and (
+                    len(self.group_history[self.pos_neg_indices[idx, 2]])
+                    <= self.history_maxlen
+                )
+                else self.rng.choice(
+                    self.group_history[self.pos_neg_indices[idx, 2]],
+                    self.history_maxlen,
+                    replace=False,
+                    shuffle=False,
+                )
+            ),
             self.pos_neg_indices[idx, 0],
             self.pos_neg_indices[idx, 1],
         )
@@ -462,25 +477,15 @@ class ClassificationTrainDataset(Dataset):
 
 def pad_to_maxlen(
     grouped_items: np.ndarray | Sequence[np.ndarray] | Sequence[Sequence[int]],
-    max_length: Optional[int] = None,
-    rng=np.random.default_rng(1234),
 ) -> dict[str, np.ndarray]:
     len_list = list(map(len, grouped_items))
     max_len = max(len_list)
-    if max_length:
-        max_len = min(max_len, max_length)
     indices = []
     attention_mask = []
     for i, length in enumerate(len_list):
-        item = (
-            grouped_items[i]
-            if max_len > length
-            else rng.choice(grouped_items[i], max_len, replace=False)
-        )
-        # item = grouped_items[i] if max_len > length else grouped_items[i][:max_len]
         indices.append(
             np.pad(
-                item,
+                grouped_items[i] if max_len > length else grouped_items[i][:max_len],
                 pad_width=(0, max_len - min(max_len, length)),
                 mode="constant",
                 constant_values=0,
@@ -488,8 +493,8 @@ def pad_to_maxlen(
         )
         attention_mask.append(
             np.pad(
-                np.ones(min(max_len, length), dtype=np.int32),
-                pad_width=(0, max_len - min(max_len, length)),
+                np.ones(length, dtype=np.int32),
+                pad_width=(0, max_len - length),
                 mode="constant",
                 constant_values=0,
             )
@@ -629,9 +634,7 @@ def attention_attention_train_collate_fn(input, conn, rng=np.random.default_rng(
 
     rev_split = np.split(reverse_indices, sum_list)
 
-    padded_history = pad_to_maxlen(
-        rev_split[:-2], max_length=IMPRESSION_MAXLEN, rng=rng
-    )
+    padded_history = pad_to_maxlen(rev_split[:-2])
     return (
         final_dict["embeddings"].to(dtype=torch.float32)[:, :NEWS_TEXT_MAXLEN],
         final_dict["attention_mask"].to(dtype=torch.int32)[:, :NEWS_TEXT_MAXLEN],

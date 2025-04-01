@@ -29,7 +29,8 @@ def main():
     ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
     save_dir = Path("embeddings")
     exp_name = "attn_attn"
-    db_name = "mydb.sqlite"
+    # db_name = "mydb.sqlite"
+    db_name = "/content/drive/MyDrive/my_db/mydb_train.sqlite"
 
     rng = np.random.default_rng(1234)
     train_behaviors, train_news_text_dict = load_dataset(
