@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Iterable
+import sqlite3
 import numpy as np
 import pandas as pd
 import torch
@@ -13,6 +14,8 @@ from .data_utils import (
     final_attention_eval_collate_fn,
     rank_group_preds,
     group_items,
+    TokenAttnEvalDataset,
+    token_attention_eval_collate_fn,
 )
 from .config import (
     NEWS_TEXT_MAXLEN,
@@ -27,10 +30,12 @@ from .modeling_utils import (
     FinalAttention,
     WeightedSumModel,
     store_embed_from_model,
+    get_token_attn_model,
 )
 from .batch_size_finder import (
     get_classification_inference_batch_size,
     get_attention_inference_batch_size,
+    get_token_attention_inference_batch_size,
 )
 
 
@@ -289,3 +294,57 @@ def store_embeddings(
     store_embed_from_model(
         model, news_text_dataset, NEWS_TEXT_MAXLEN, text_collate_fn, db_name
     )
+
+
+def apply_token_attn(model_path, db_name, num_samples):
+    model = get_token_attn_model(model_path=model_path)
+
+    ds = TokenAttnEvalDataset(num_samples)
+    conn = sqlite3.connect(db_name)
+
+    collate_fn = partial(token_attention_eval_collate_fn, conn=conn)
+
+    batch_size = get_token_attention_inference_batch_size(model)
+
+    eval_dataloader = DataLoader(
+        dataset=ds,
+        batch_size=batch_size,
+        collate_fn=collate_fn,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
+    )
+    res = get_model_eval(eval_dataloader, model)
+    conn.close()
+
+    return res
+
+
+def get_final_second_attention_score(
+    history_rev_index: np.ndarray,
+    history_len_list: np.ndarray,
+    news_rev_index: np.ndarray,
+    impression_len_list: np.ndarray,
+    news_embeddings: torch.Tensor,
+    history_bool: pd.Series,
+    attention_model: torch.nn.Module,
+):
+    imp_len_list = list(impression_len_list)
+
+    history_score = (
+        get_cos_sim_scores(
+            history_rev_index,
+            history_len_list,
+            news_rev_index[history_bool.repeat(imp_len_list)],
+            impression_len_list[history_bool],
+            news_embeddings,
+            attention_model,
+        )
+        .detach()
+        .cpu()
+        .numpy()
+    )
+
+    scores = history_score
+    grouped_scores = rank_group_preds(scores, impression_len_list)
+    return {"scores": scores, "grouped_scores": grouped_scores}

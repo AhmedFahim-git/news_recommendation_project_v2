@@ -37,7 +37,7 @@ def dummy_classificaion_inputs_outputs(
 def dummy_attention_inputs_outputs(
     batch_size: int,
     max_len: int = IMPRESSION_MAXLEN,
-    embedding_dim: int = REDUCED_DIM,
+    embedding_dim: int = EMBEDDING_DIM,
     device=DEVICE,
 ):
     return {
@@ -84,6 +84,32 @@ def dummy_attention_attention_inputs_outputs(
                     (batch_size, max_len), dtype=torch.int32
                 ).to(device),
             },
+        },
+        "outputs": torch.ones(
+            (batch_size, embedding_dim), dtype=torch.float32, device=device
+        ),
+    }
+
+
+def dummy_token_attention_inputs_outputs(
+    batch_size: int,
+    news_text_maxlen=NEWS_TEXT_MAXLEN,
+    embedding_dim=EMBEDDING_DIM,
+    device=DEVICE,
+):
+    return {
+        "inputs": {
+            "embeddings": torch.rand(
+                (
+                    batch_size,
+                    news_text_maxlen,
+                    embedding_dim,
+                )
+            ).to(device),
+            "attention_mask": torch.ones(
+                (batch_size, news_text_maxlen),
+                dtype=torch.int32,
+            ).to(device),
         },
         "outputs": torch.ones(
             (batch_size, embedding_dim), dtype=torch.float32, device=device

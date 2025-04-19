@@ -619,7 +619,7 @@ def get_embeds_from_db(conn, indices: Iterable):
     return final_dict
 
 
-def attention_attention_train_collate_fn(input, conn, rng=np.random.default_rng(1234)):
+def attention_attention_train_collate_fn(input, conn):
     grouped_history, news_ind_pos, news_ind_neg = zip(*input)
     len_list = [len(i) for i in grouped_history]
 
@@ -642,3 +642,21 @@ def attention_attention_train_collate_fn(input, conn, rng=np.random.default_rng(
         torch.tensor(padded_history["attention_mask"], dtype=torch.int32),
         torch.tensor(np.concatenate(rev_split[-2:]), dtype=torch.int32),
     )
+
+
+class TokenAttnEvalDataset(Dataset):
+    def __init__(self, num_items: int):
+        self.num_items = num_items
+
+    def __len__(self):
+        return self.num_items
+
+    def __getitem__(self, idx):
+        return idx
+
+
+def token_attention_eval_collate_fn(input, conn):
+    res_dict = get_embeds_from_db(conn, input)
+    return res_dict["embeddings"].to(dtype=torch.float32), res_dict[
+        "attention_mask"
+    ].to(dtype=torch.int32)

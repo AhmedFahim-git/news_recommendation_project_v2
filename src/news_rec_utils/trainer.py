@@ -859,7 +859,7 @@ class AttentionAttentionTrainer:
         self.optimizer = AdamW(
             list(self.token_attention_model.parameters())
             + list(self.final_attention_model.parameters()),
-            lr=1e-4,
+            lr=1e-5,
         )
 
         self.loss_fn = torch.nn.MarginRankingLoss(2)
@@ -886,7 +886,7 @@ class AttentionAttentionTrainer:
         self.connection = sqlite3.connect(db_name)
 
         train_collate_fn = partial(
-            attention_attention_train_collate_fn, conn=self.connection, rng=self.rng
+            attention_attention_train_collate_fn, conn=self.connection
         )
 
         self.train_dataloader = DataLoader(
@@ -915,18 +915,12 @@ class AttentionAttentionTrainer:
             batch_num += 1
             self.optimizer.zero_grad()
             first_res = self.token_attention_model(
-                token_embeds.to(DEVICE), token_attn_mask.to(DEVICE)
+                token_embeds.to(DEVICE, dtype=torch.float32), token_attn_mask.to(DEVICE)
             )
             second_res = first_res[hist_indices] * hist_attn_mask.unsqueeze(-1).to(
                 DEVICE
             )
             outputs = self.final_attention_model(second_res, hist_attn_mask.to(DEVICE))
-            # model_input = self.train_news_embedding[
-            #     history_indices
-            # ] * history_attention_mask.unsqueeze(-1)
-            # outputs = self.attention_model(
-            #     model_input.to(DEVICE), history_attention_mask.to(DEVICE)
-            # )
 
             res = F.cosine_similarity(
                 outputs.repeat((2, 1)).to(DEVICE),
@@ -948,7 +942,7 @@ class AttentionAttentionTrainer:
             running_count += len(hist_indices)
             # losses.append(loss.item())
             # counts.append(len(hist_indices))
-            if (batch_num % 1000) == 0:
+            if (batch_num % 4000) == 0:
                 print(running_loss / running_count)
                 if self.token_ckpt_dir:
                     self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -959,7 +953,7 @@ class AttentionAttentionTrainer:
                 if self.final_attn_ckpt_dir:
                     self.final_attn_ckpt_dir.mkdir(parents=True, exist_ok=True)
                     torch.save(
-                        self.final_attention_model,
+                        self.final_attention_model.state_dict(),
                         self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
                     )
         self.optimizer.zero_grad()
@@ -1028,7 +1022,7 @@ class AttentionAttentionTrainer:
             if self.final_attn_ckpt_dir:
                 self.final_attn_ckpt_dir.mkdir(parents=True, exist_ok=True)
                 torch.save(
-                    self.final_attention_model,
+                    self.final_attention_model.state_dict(),
                     self.final_attn_ckpt_dir / f"Epoch_{i+1}.pt",
                 )
                 # if mean_val_score > best_val_score:

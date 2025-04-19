@@ -7,6 +7,7 @@ from .dummy import (
     dummy_classificaion_inputs_outputs,
     dummy_attention_inputs_outputs,
     dummy_attention_attention_inputs_outputs,
+    dummy_token_attention_inputs_outputs,
 )
 from .config import NEWS_TEXT_MAXLEN, IMPRESSION_MAXLEN
 
@@ -30,7 +31,11 @@ def dummy_attention_attention_train_func(
         max_len=max_len,
         news_text_maxlen=news_text_maxlen,
     )
-    first_res = token_model(**dummy_res["inputs"]["token_attention"])
+    embeddings = dummy_res["inputs"]["token_attention"]["embeddings"].to(
+        dtype=torch.float32
+    )
+    attention_mask = dummy_res["inputs"]["token_attention"]["attention_mask"]
+    first_res = token_model(embeddings, attention_mask)
     split_array = torch.tensor_split(
         first_res, dummy_res["inputs"]["final_attention"]["split_array"]
     )
@@ -134,9 +139,6 @@ def get_batch_size(test_func: Callable[[int], None]):
 
 
 def get_text_inference_batch_size(model: torch.nn.Module, max_len: int):
-    # if model.device.type != "cuda":
-    #     print("Model is on CPU. Not CUDA. Returning batch size of 5")
-    #     return 5
     model_part = str(model.config if hasattr(model, "config") else model)
     task_type = "TEXT_INFERENCE"
     key = model_part + task_type + str(max_len)
@@ -153,9 +155,6 @@ def get_text_inference_batch_size(model: torch.nn.Module, max_len: int):
 
 
 def get_classification_train_batch_size(model: torch.nn.Module, optimizer):
-    # if model.device.type != "cuda":
-    #     print("Model is on CPU. Not CUDA. Returning batch size of 5")
-    #     return 5
     model_part = "classification"
     task_type = "TRAIN"
     key = model_part + task_type
@@ -172,9 +171,6 @@ def get_classification_train_batch_size(model: torch.nn.Module, optimizer):
 
 
 def get_classification_inference_batch_size(model: torch.nn.Module):
-    # if model.device.type != "cuda":
-    #     print("Model is on CPU. Not CUDA. Returning batch size of 5")
-    #     return 5
     model_part = "classification"
     task_type = "INFERENCE"
     key = model_part + task_type
@@ -215,9 +211,6 @@ def get_attention_attention_train_batch_size(
 
 
 def get_attention_train_batch_size(model: torch.nn.Module, optimizer):
-    # if model.device.type != "cuda":
-    #     print("Model is on CPU. Not CUDA. Returning batch size of 5")
-    #     return 5
     model_part = "attention"
     task_type = "TRAIN"
     key = model_part + task_type
@@ -234,9 +227,6 @@ def get_attention_train_batch_size(model: torch.nn.Module, optimizer):
 
 
 def get_attention_inference_batch_size(model: torch.nn.Module):
-    # if model.device.type != "cuda":
-    #     print("Model is on CPU. Not CUDA. Returning batch size of 5")
-    #     return 5
     model_part = "attention"
     task_type = "INFERENCE"
     key = model_part + task_type
@@ -249,3 +239,18 @@ def get_attention_inference_batch_size(model: torch.nn.Module):
             )
         )
     return BATCH_SIZES[key]
+
+
+def get_token_attention_inference_batch_size(model: torch.nn.Module):
+    model_part = "token_attention"
+    task_type = "INFERENCE"
+    key = model_part + task_type
+    if key not in BATCH_SIZES:
+        BATCH_SIZES[key] = get_batch_size(
+            partial(
+                dummy_inference_func,
+                model=model,
+                dummy_func=dummy_token_attention_inputs_outputs,
+            )
+        )
+    return BATCH_SIZES[key] - 5
