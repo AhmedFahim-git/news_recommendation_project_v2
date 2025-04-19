@@ -28,7 +28,7 @@ from .attention import NewAttention, MyEncoder
 from .batch_size_finder import get_text_inference_batch_size
 
 
-@torch.compile
+# @torch.compile
 def last_token_pool(
     last_hidden_states: torch.Tensor, attention_mask: torch.Tensor
 ) -> torch.Tensor:
@@ -193,6 +193,7 @@ def get_final_attention_model(model_path: Optional[Path] = None):
     model = FinalAttention(embed_dim=EMBEDDING_DIM, hidden_dim=EMBEDDING_DIM)
     if model_path:
         model.load_state_dict(torch.load(model_path, weights_only=True))
+        # model = torch.load(model_path, weights_only=False)
     return model.to(DEVICE)
 
 
@@ -247,7 +248,7 @@ def get_model_eval(
     model.eval()
     with torch.no_grad():
         for item in tqdm(dataloader, desc="Model Inference"):
-            if isinstance(item, tuple):
+            if isinstance(item, tuple) or isinstance(item, list):
                 result_list.append(
                     model(*map(lambda x: x.to(DEVICE), item)).detach().cpu()
                 )
@@ -345,6 +346,9 @@ class FirstAttentionPoolFunc(torch.nn.Module):
         )
 
     def forward(self, embeddings, attention_mask):
+        # x = torch.utils.checkpoint.checkpoint(
+        #     self.encoder, (embeddings, attention_mask), use_reentrant=False
+        # )
         x = self.encoder(embeddings, attention_mask)
         return self.pool_func(x, attention_mask)
 
