@@ -605,7 +605,7 @@ def main():
 
 
 def get_embeds_from_db(conn, indices: Iterable):
-    indices = ",".join([str(i) for i in indices])
+    indices = ",".join([str(i + 1) for i in indices])
 
     # with closing(sqlite3.connect(db_name)) as conn:
     res = conn.execute(f"SELECT data from tensors where id in ({indices});").fetchall()

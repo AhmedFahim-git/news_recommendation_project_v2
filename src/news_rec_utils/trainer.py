@@ -5,7 +5,6 @@ import json
 from datetime import datetime
 from typing import Optional
 from dotenv import load_dotenv
-import struct
 import io
 import time
 import sqlite3
@@ -17,7 +16,6 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import ContainerClient, BlobClient
-import pyodbc
 from .config import DEVICE, NUM_WORKERS, IMPRESSION_MAXLEN
 from .data_utils import (
     ClassificationTrainDataset,
@@ -893,34 +891,10 @@ class AttentionAttentionTrainer:
             rng=self.rng,
         )
 
-        # self.connection = sqlite3.connect(db_name)
-        # default_credential = DefaultAzureCredential()
-        connection_string = os.environ["AZURE_SQL_CONNECTIONSTRING"]
+        self.connection = sqlite3.connect(db_name)
         account_url = os.environ["ACCOUNT_URL"]
         container_name = os.environ["CONTAINER_NAME"]
         blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
-
-        # token_bytes = default_credential.get_token(
-        #     "https://database.windows.net/.default"
-        # ).token.encode("UTF-16-LE")
-        # token_struct = struct.pack(
-        #     f"<I{len(token_bytes)}s", len(token_bytes), token_bytes
-        # )
-        # SQL_COPT_SS_ACCESS_TOKEN = (
-        #     1256  # This connection option is defined by microsoft in msodbcsql.h
-        # )
-
-        retry_flag = True
-        retry_count = 0
-        while retry_flag and retry_count < 5:
-            try:
-                self.connection = pyodbc.connect(connection_string)
-                # cursor.execute(query, [args['type'], args['id']])
-                retry_flag = False
-            except:
-                print("Retry after 1 sec")
-                retry_count = retry_count + 1
-                time.sleep(1)
 
         self.container = ContainerClient(
             account_url=account_url,
