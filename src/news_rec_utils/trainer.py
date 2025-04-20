@@ -959,7 +959,7 @@ class AttentionAttentionTrainer:
             running_count += len(hist_indices)
             # losses.append(loss.item())
             # counts.append(len(hist_indices))
-            if (batch_num % 8) == 0:
+            if (batch_num % 1000) == 0:
                 print(running_loss / running_count)
                 if self.token_ckpt_dir:
                     self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
