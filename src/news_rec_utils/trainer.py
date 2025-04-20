@@ -1,8 +1,12 @@
 from functools import partial
 from pathlib import Path
+import os
 import json
 from datetime import datetime
 from typing import Optional
+import struct
+import io
+import time
 import sqlite3
 import numpy as np
 import torch
@@ -10,6 +14,9 @@ from torch.utils.data import DataLoader
 from torch.optim.adamw import AdamW
 import torch.nn.functional as F
 from tqdm import tqdm
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import ContainerClient, BlobClient
+import pyodbc
 from .config import DEVICE, NUM_WORKERS, IMPRESSION_MAXLEN
 from .data_utils import (
     ClassificationTrainDataset,
@@ -883,7 +890,42 @@ class AttentionAttentionTrainer:
             rng=self.rng,
         )
 
-        self.connection = sqlite3.connect(db_name)
+        # self.connection = sqlite3.connect(db_name)
+        default_credential = DefaultAzureCredential()
+        connection_string = os.environ["AZURE_SQL_CONNECTIONSTRING"]
+        account_url = os.environ["ACCOUNT_URL"]
+        container_name = os.environ["CONTAINER_NAME"]
+
+        token_bytes = default_credential.get_token(
+            "https://database.windows.net/.default"
+        ).token.encode("UTF-16-LE")
+        token_struct = struct.pack(
+            f"<I{len(token_bytes)}s", len(token_bytes), token_bytes
+        )
+        SQL_COPT_SS_ACCESS_TOKEN = (
+            1256  # This connection option is defined by microsoft in msodbcsql.h
+        )
+        
+        
+        retry_flag = True
+        retry_count = 0
+        while retry_flag and retry_count < 5:
+          try:
+            self.connection = pyodbc.connect(
+            connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct}
+        )
+            # cursor.execute(query, [args['type'], args['id']])
+            retry_flag = False
+          except:
+            print("Retry after 1 sec")
+            retry_count = retry_count + 1
+            time.sleep(1)
+
+        self.container = ContainerClient(
+            account_url=account_url,
+            container_name=container_name,
+            credential=default_credential,
+        )
 
         train_collate_fn = partial(
             attention_attention_train_collate_fn, conn=self.connection
@@ -946,16 +988,40 @@ class AttentionAttentionTrainer:
                 print(running_loss / running_count)
                 if self.token_ckpt_dir:
                     self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
+                    # torch.save(
+                    #     self.token_attention_model.state_dict(),
+                    #     self.token_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
+                    # )
+                    buffer = io.BytesIO()
                     torch.save(
                         self.token_attention_model.state_dict(),
-                        self.token_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
+                        buffer,
                     )
+                    buffer.seek(0)
+                    self.container.upload_blob(
+                        str(self.token_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt"),
+                        buffer,
+                    )
+                    buffer.close()
                 if self.final_attn_ckpt_dir:
                     self.final_attn_ckpt_dir.mkdir(parents=True, exist_ok=True)
+                    # torch.save(
+                    #     self.final_attention_model.state_dict(),
+                    #     self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
+                    # )
+                    buffer = io.BytesIO()
                     torch.save(
                         self.final_attention_model.state_dict(),
-                        self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
+                        buffer,
                     )
+                    buffer.seek(0)
+                    self.container.upload_blob(
+                        str(
+                            self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt"
+                        ),
+                        buffer,
+                    )
+                    buffer.close()
         self.optimizer.zero_grad()
         train_epoch_loss = running_loss / running_count
         return train_epoch_loss
@@ -1015,16 +1081,30 @@ class AttentionAttentionTrainer:
             # mean_val_score = float(np.mean(list(val_eval_score.values())[:-1]))
             if self.token_ckpt_dir:
                 self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
-                torch.save(
-                    self.token_attention_model.state_dict(),
-                    self.token_ckpt_dir / f"Epoch_{i+1}.pt",
+                # torch.save(
+                #     self.token_attention_model.state_dict(),
+                #     self.token_ckpt_dir / f"Epoch_{i+1}.pt",
+                # )
+                buffer = io.BytesIO()
+                torch.save(self.token_attention_model.state_dict(), buffer)
+                buffer.seek(0)
+                self.container.upload_blob(
+                    str(self.token_ckpt_dir / f"Epoch_{i+1}.pt"), buffer
                 )
+                buffer.close()
             if self.final_attn_ckpt_dir:
                 self.final_attn_ckpt_dir.mkdir(parents=True, exist_ok=True)
-                torch.save(
-                    self.final_attention_model.state_dict(),
-                    self.final_attn_ckpt_dir / f"Epoch_{i+1}.pt",
+                # torch.save(
+                #     self.final_attention_model.state_dict(),
+                #     self.final_attn_ckpt_dir / f"Epoch_{i+1}.pt",
+                # )
+                buffer = io.BytesIO()
+                torch.save(self.final_attention_model.state_dict(), buffer)
+                buffer.seek(0)
+                self.container.upload_blob(
+                    str(self.final_attn_ckpt_dir / f"Epoch_{i+1}.pt"), buffer
                 )
+                buffer.close()
                 # if mean_val_score > best_val_score:
                 #     torch.save(
                 #         self.attention_model.state_dict(),

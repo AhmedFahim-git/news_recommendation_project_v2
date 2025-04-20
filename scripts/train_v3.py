@@ -21,21 +21,21 @@ from news_rec_utils.evaluation import score
 
 
 def main():
-    # data_dir = Path("data")
-    data_dir = Path("/content/drive/MyDrive/MIND_dataset")
-    # log_dir = Path("logs")
-    log_dir = Path("/content/drive/MyDrive/log_dir")
-    # ckpt_root_dir = Path("models")
-    ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
+    data_dir = Path("data")
+    # data_dir = Path("/content/drive/MyDrive/MIND_dataset")
+    log_dir = Path("logs")
+    # log_dir = Path("/content/drive/MyDrive/log_dir")
+    ckpt_root_dir = Path("models")
+    # ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
     save_dir = Path("embeddings")
     exp_name = "attn_attn"
-    # db_name = "mydb.sqlite"
-    db_name = "/content/drive/MyDrive/my_db/mydb_dev.sqlite"
+    db_name = "mydb_train.sqlite"
+    # db_name = "/content/drive/MyDrive/my_db/mydb_dev.sqlite"
 
     rng = np.random.default_rng(1234)
-    dev_behaviors, dev_news_text_dict = load_dataset(
+    train_behaviors, train_news_text_dict = load_dataset(
         data_dir,
-        NewsDataset.MINDsmall_dev,
+        NewsDataset.MINDsmall_train,
         data_subset=DataSubset.WITH_HISTORY,
         random_state=rng,
         # num_samples=500,
@@ -112,8 +112,8 @@ def main():
         "train_subset",
         [
             ("init_transform", transform_component),
-            ("store_comp", store_emb_comp),
-            # ("attn_attn", attn_attn_comp),
+            # ("store_comp", store_emb_comp),
+            ("attn_attn", attn_attn_comp),
             # ("load_embedding", load_component),
             # # ("model_embed", embedding_component),
             # ("classification", classification_component),
@@ -125,9 +125,9 @@ def main():
     )
     train_pipeline.train(
         context_dict={
-            "news_dataset": NewsDataset.MINDsmall_dev,
-            "behaviors": dev_behaviors,
-            "news_text_dict": dev_news_text_dict,
+            "news_dataset": NewsDataset.MINDsmall_train,
+            "behaviors": train_behaviors,
+            "news_text_dict": train_news_text_dict,
         },
     )
     # context_dict, val_context_dict = train_pipeline.train(
