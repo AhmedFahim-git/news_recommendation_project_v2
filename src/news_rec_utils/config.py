@@ -35,7 +35,7 @@ NEWS_CLASSIFICATION_PROMPT = "Please analyze the following news article to infor
 
 TORCH_DTYPE = torch.float32
 
-NUM_WORKERS = 4
+NUM_WORKERS = 2
 
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability(DEVICE)

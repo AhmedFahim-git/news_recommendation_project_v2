@@ -22,11 +22,14 @@ fi
 
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
-az login --identity --username $MANAGED_ID_CLIENT_ID
+# az login --identity --username $MANAGED_ID_CLIENT_ID
 
 mkdir data
 mkdir data/processed
 mkdir data/processed/MINDsmall_train
 
-az storage blob download --account-name bucketlist --container-name mycontainer --file data/processed/MINDsmall_train/behaviors.parquet --name behaviors.parquet --auth-mode login
-az storage blob download --account-name bucketlist --container-name mycontainer --file data/processed/MINDsmall_train/news_text.parquet --name news_text.parquet --auth-mode login
+az storage blob download --container-name mycontainer --account-name bucketlist --file data/processed/MINDsmall_train/behaviors.parquet --name behaviors.parquet --auth-mode key --sas-token $BLOB_SAS_TOKEN
+az storage blob download --container-name mycontainer --account-name bucketlist --file data/processed/MINDsmall_train/news_text.parquet --name news_text.parquet --auth-mode key --sas-token $BLOB_SAS_TOKEN
+
+# az storage blob download --account-name bucketlist --container-name mycontainer --file data/processed/MINDsmall_train/behaviors.parquet --name behaviors.parquet --auth-mode login
+# az storage blob download --account-name bucketlist --container-name mycontainer --file data/processed/MINDsmall_train/news_text.parquet --name news_text.parquet --auth-mode login

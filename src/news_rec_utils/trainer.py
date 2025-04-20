@@ -4,6 +4,7 @@ import os
 import json
 from datetime import datetime
 from typing import Optional
+from dotenv import load_dotenv
 import struct
 import io
 import time
@@ -38,6 +39,8 @@ from .data_model_helper import (
     get_cos_sim_reduce_scores,
 )
 from .evaluation import score
+
+load_dotenv()
 
 
 class ClassificationModelTrainer:
@@ -891,40 +894,38 @@ class AttentionAttentionTrainer:
         )
 
         # self.connection = sqlite3.connect(db_name)
-        default_credential = DefaultAzureCredential()
+        # default_credential = DefaultAzureCredential()
         connection_string = os.environ["AZURE_SQL_CONNECTIONSTRING"]
         account_url = os.environ["ACCOUNT_URL"]
         container_name = os.environ["CONTAINER_NAME"]
+        blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
 
-        token_bytes = default_credential.get_token(
-            "https://database.windows.net/.default"
-        ).token.encode("UTF-16-LE")
-        token_struct = struct.pack(
-            f"<I{len(token_bytes)}s", len(token_bytes), token_bytes
-        )
-        SQL_COPT_SS_ACCESS_TOKEN = (
-            1256  # This connection option is defined by microsoft in msodbcsql.h
-        )
-        
-        
+        # token_bytes = default_credential.get_token(
+        #     "https://database.windows.net/.default"
+        # ).token.encode("UTF-16-LE")
+        # token_struct = struct.pack(
+        #     f"<I{len(token_bytes)}s", len(token_bytes), token_bytes
+        # )
+        # SQL_COPT_SS_ACCESS_TOKEN = (
+        #     1256  # This connection option is defined by microsoft in msodbcsql.h
+        # )
+
         retry_flag = True
         retry_count = 0
         while retry_flag and retry_count < 5:
-          try:
-            self.connection = pyodbc.connect(
-            connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct}
-        )
-            # cursor.execute(query, [args['type'], args['id']])
-            retry_flag = False
-          except:
-            print("Retry after 1 sec")
-            retry_count = retry_count + 1
-            time.sleep(1)
+            try:
+                self.connection = pyodbc.connect(connection_string)
+                # cursor.execute(query, [args['type'], args['id']])
+                retry_flag = False
+            except:
+                print("Retry after 1 sec")
+                retry_count = retry_count + 1
+                time.sleep(1)
 
         self.container = ContainerClient(
             account_url=account_url,
             container_name=container_name,
-            credential=default_credential,
+            credential=blob_sas_token,
         )
 
         train_collate_fn = partial(
@@ -984,7 +985,7 @@ class AttentionAttentionTrainer:
             running_count += len(hist_indices)
             # losses.append(loss.item())
             # counts.append(len(hist_indices))
-            if (batch_num % 4000) == 0:
+            if (batch_num % 8) == 0:
                 print(running_loss / running_count)
                 if self.token_ckpt_dir:
                     self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
