@@ -9,6 +9,7 @@ import io
 import time
 import sqlite3
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from torch.optim.adamw import AdamW
@@ -867,7 +868,7 @@ class AttentionAttentionTrainer:
         self.optimizer = AdamW(
             list(self.token_attention_model.parameters())
             + list(self.final_attention_model.parameters()),
-            lr=1e-5,
+            lr=1e-6,
         )
 
         self.loss_fn = torch.nn.MarginRankingLoss(2)
@@ -955,48 +956,51 @@ class AttentionAttentionTrainer:
                 max_norm=0.5,
             )
             self.optimizer.step()
+            if pd.isna(loss.item()):
+                print("Nan loss found. Please check")
+                break
             running_loss += loss.item() * len(hist_indices)
             running_count += len(hist_indices)
             # losses.append(loss.item())
             # counts.append(len(hist_indices))
-            if (batch_num % 1000) == 0:
-                print(running_loss / running_count)
-                if self.token_ckpt_dir:
-                    self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
-                    # torch.save(
-                    #     self.token_attention_model.state_dict(),
-                    #     self.token_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
-                    # )
-                    buffer = io.BytesIO()
-                    torch.save(
-                        self.token_attention_model.state_dict(),
-                        buffer,
-                    )
-                    buffer.seek(0)
-                    self.container.upload_blob(
-                        str(self.token_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt"),
-                        buffer,
-                    )
-                    buffer.close()
-                if self.final_attn_ckpt_dir:
-                    self.final_attn_ckpt_dir.mkdir(parents=True, exist_ok=True)
-                    # torch.save(
-                    #     self.final_attention_model.state_dict(),
-                    #     self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
-                    # )
-                    buffer = io.BytesIO()
-                    torch.save(
-                        self.final_attention_model.state_dict(),
-                        buffer,
-                    )
-                    buffer.seek(0)
-                    self.container.upload_blob(
-                        str(
-                            self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt"
-                        ),
-                        buffer,
-                    )
-                    buffer.close()
+            # if (batch_num % 1000) == 0:
+            #     print(running_loss / running_count)
+            #     if self.token_ckpt_dir:
+            #         self.token_ckpt_dir.mkdir(parents=True, exist_ok=True)
+            #         # torch.save(
+            #         #     self.token_attention_model.state_dict(),
+            #         #     self.token_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
+            #         # )
+            #         buffer = io.BytesIO()
+            #         torch.save(
+            #             self.token_attention_model.state_dict(),
+            #             buffer,
+            #         )
+            #         buffer.seek(0)
+            #         self.container.upload_blob(
+            #             str(self.token_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt"),
+            #             buffer,
+            #         )
+            #         buffer.close()
+            #     if self.final_attn_ckpt_dir:
+            #         self.final_attn_ckpt_dir.mkdir(parents=True, exist_ok=True)
+            #         # torch.save(
+            #         #     self.final_attention_model.state_dict(),
+            #         #     self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt",
+            #         # )
+            #         buffer = io.BytesIO()
+            #         torch.save(
+            #             self.final_attention_model.state_dict(),
+            #             buffer,
+            #         )
+            #         buffer.seek(0)
+            #         self.container.upload_blob(
+            #             str(
+            #                 self.final_attn_ckpt_dir / f"Epoch_{1}_batch_{batch_num}.pt"
+            #             ),
+            #             buffer,
+            #         )
+            #         buffer.close()
         self.optimizer.zero_grad()
         train_epoch_loss = running_loss / running_count
         return train_epoch_loss
