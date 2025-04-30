@@ -287,7 +287,7 @@ def get_data(
 def process_news(news_df: pd.DataFrame) -> pd.DataFrame:
     print("Making news_text column for the news data")
     news_df["news_text"] = news_df.apply(
-        lambda x: f"Title: {x['Title']}\nAbstract: {x['Abstract']}\nCategory: {x['Category']}\nSubCategory: {x['SubCategory']}",
+        lambda x: f"Title: {x['Title']}\nCategory: {x['Category']}\nSubCategory: {x['SubCategory']}\nAbstract: {x['Abstract']}",
         axis=1,
     )
     return news_df

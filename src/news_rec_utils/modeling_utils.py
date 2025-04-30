@@ -20,12 +20,14 @@ from .config import (
     DEVICE,
     EMBEDDING_DIM,
     NUM_WORKERS,
+    NEWS_TEXT_MAXLEN,
+    QUERY_INSTRUCTION,
     TORCH_DTYPE,
     REDUCED_DIM,
     NUM_HIDDEN_LAYERS,
 )
 from .attention import NewAttention, MyEncoder
-from .batch_size_finder import get_text_inference_batch_size
+from .batch_size_finder import get_text_inference_batch_size, get_nv_embed_batch_size
 
 
 # @torch.compile
@@ -65,7 +67,7 @@ def output_pool(model) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
     elif model.config.architectures[0] == "NewModel":
         return first_token_pool
     else:
-        return lambda x, y: x
+        return first_token_pool
     # Alternate implementation
     # with torch.no_grad():
     #     output = model(**dummy_text_inputs(1, 1, device=model.device)).to("cpu")
@@ -73,6 +75,11 @@ def output_pool(model) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
     #     return last_token_pool
     # elif isinstance(output, BaseModelOutputWithPooling):
     #     return get_last_embedding
+
+
+def get_nvembed_model(path: str, device=DEVICE):
+    assert path == "nvidia/NV-Embed-v2"
+    return AutoModel.from_pretrained("nvidia/NV-Embed-v2", trust_remote_code=True)
 
 
 def get_model_and_tokenizer(path: str, device=DEVICE):
@@ -237,6 +244,21 @@ def get_embed_from_model(
     )
     model.eval()
     return get_text_embed_eval(model, text_dataloader)
+
+
+def get_nv_embeds(model, texts: list[str], type: str):
+    batch_size = get_nv_embed_batch_size(model)
+    if type == "query":
+        instruction = QUERY_INSTRUCTION
+    else:
+        instruction = ""
+    return model._do_encode(
+        texts,
+        batch_size=batch_size,
+        instruction=instruction,
+        max_length=NEWS_TEXT_MAXLEN,
+        num_workers=NUM_WORKERS,
+    )
 
 
 def get_model_eval(

@@ -23,18 +23,14 @@ def main():
     log_dir = Path("logs")
     ckpt_root_dir = Path("models")
     save_dir = Path("embeddings")
-    exp_name = "ranking_loss_gte_1_5_new_reduce_attn_individual_no_weight"
+    exp_name = "nv_embed_final_attention"
 
     rng = np.random.default_rng(1234)
     train_behaviors, train_news_text_dict = load_dataset(
-        data_dir,
-        NewsDataset.MINDsmall_train,
-        random_state=rng,
+        data_dir, NewsDataset.MINDsmall_train, random_state=rng, num_samples=2000
     )
     val_behaviors, val_news_text_dict = load_dataset(
-        data_dir,
-        NewsDataset.MINDsmall_dev,
-        random_state=rng,
+        data_dir, NewsDataset.MINDsmall_dev, random_state=rng, num_samples=2000
     )
 
     transform_component = TransformData()
@@ -45,7 +41,7 @@ def main():
         # model_path=ckpt_root_dir / "classification_head" / "Best_model.pt",
         log_dir=log_dir,
         ckpt_dir=ckpt_root_dir / "classification_head",
-        num_epochs=10,
+        num_epochs=5,
         rng=rng,
         exp_name=exp_name,
     )
@@ -66,14 +62,14 @@ def main():
     #     exp_name=exp_name,
     #     rng=rng,
     # )
-    # attention_only_component = AttentionComponent(
-    #     log_dir=log_dir,
-    #     ckpt_dir=ckpt_root_dir / "attention_model",
-    #     num_epochs=10,
-    #     exp_name=exp_name,
-    #     # max_neg_ratio=1 / 5,
-    #     rng=rng,
-    # )
+    attention_only_component = AttentionComponent(
+        log_dir=log_dir,
+        ckpt_dir=ckpt_root_dir / "attention_model",
+        num_epochs=5,
+        exp_name=exp_name,
+        # max_neg_ratio=1 / 5,
+        rng=rng,
+    )
 
     # new_attention = NewAttentionComponent(
     #     log_dir=log_dir,
@@ -81,13 +77,13 @@ def main():
     #     num_epochs=5,
     #     rng=rng,
     # )
-    new_reduce_attention = NewAttentionReduceComponent(
-        log_dir=log_dir,
-        ckpt_dir=ckpt_root_dir / "new_attention_model",
-        reduce_ckpt_dir=ckpt_root_dir / "reducing_model",
-        num_epochs=2,
-        rng=rng,
-    )
+    # new_reduce_attention = NewAttentionReduceComponent(
+    #     log_dir=log_dir,
+    #     ckpt_dir=ckpt_root_dir / "new_attention_model",
+    #     reduce_ckpt_dir=ckpt_root_dir / "reducing_model",
+    #     num_epochs=2,
+    #     rng=rng,
+    # )
 
     train_pipeline = Pipeline(
         "train_gte_1_5_small",
@@ -97,9 +93,9 @@ def main():
             # ("model_embed", embedding_component),
             ("classification", classification_component),
             # ("attention", attention_component),
-            # ("only_attention", attention_only_component),
+            ("only_attention", attention_only_component),
             # ("new_attention", new_attention),
-            ("reduce_attenion", new_reduce_attention),
+            # ("reduce_attenion", new_reduce_attention),
         ],
     )
     context_dict, val_context_dict = train_pipeline.train(

@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader
 from torch.optim.adamw import AdamW
 import torch.nn.functional as F
 from tqdm import tqdm
-from azure.identity import DefaultAzureCredential
 from azure.storage.blob import ContainerClient, BlobClient
 from .config import DEVICE, NUM_WORKERS, IMPRESSION_MAXLEN
 from .data_utils import (
@@ -437,6 +436,8 @@ class AttentionTrainer:
         max_neg_ratio: Optional[float] = None,
         max_pos_ratio: Optional[float] = None,
         rng: np.random.Generator = np.random.default_rng(1234),
+        train_query_news_embeddings: Optional[torch.Tensor] = None,
+        val_query_news_embeddings: Optional[torch.Tensor] = None,
     ):
         self.rng = rng
         self.log_dir = log_dir
@@ -446,7 +447,7 @@ class AttentionTrainer:
 
         self.optimizer = AdamW(
             self.attention_model.parameters(),
-            lr=1e-5,
+            lr=1e-4,
         )
 
         self.loss_fn = torch.nn.MarginRankingLoss(2)
@@ -466,7 +467,11 @@ class AttentionTrainer:
             max_pos_ratio=max_pos_ratio,
             rng=self.rng,
         )
-        self.train_news_embedding = train_news_embeddings
+        self.train_news_embeddings = train_news_embeddings
+        if isinstance(train_query_news_embeddings, torch.Tensor):
+            self.train_query_news_embeddings = train_query_news_embeddings
+        else:
+            self.train_query_news_embeddings = train_news_embeddings
 
         self.train_eval_score_func = partial(
             get_cos_sim_scores,
@@ -476,6 +481,7 @@ class AttentionTrainer:
             impression_len_list=train_impression_len_list,
             news_embeddings=train_news_embeddings,
             model=self.attention_model,
+            query_news_embeddings=self.train_query_news_embeddings,
         )
         self.train_labels = train_labels
         self.train_impression_len_list = train_impression_len_list
@@ -488,9 +494,14 @@ class AttentionTrainer:
             impression_len_list=val_impression_len_list,
             news_embeddings=val_news_embeddings,
             model=self.attention_model,
+            query_news_embeddings=self.val_query_news_embeddings,
         )
         self.val_labels = val_labels
         self.val_impression_len_list = val_impression_len_list
+        if isinstance(val_query_news_embeddings, torch.Tensor):
+            self.val_query_news_embeddings = val_query_news_embeddings
+        else:
+            self.val_query_news_embeddings = val_news_embeddings
 
         self.train_dataloader = DataLoader(
             self.train_dataset,
@@ -499,6 +510,15 @@ class AttentionTrainer:
             num_workers=NUM_WORKERS,
             shuffle=False,
             collate_fn=final_attention_train_collate_fn,
+        )
+        account_url = os.environ["ACCOUNT_URL"]
+        container_name = os.environ["CONTAINER_NAME"]
+        blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
+
+        self.container = ContainerClient(
+            account_url=account_url,
+            container_name=container_name,
+            credential=blob_sas_token,
         )
 
     def _get_val_score(self, res, impression_len_list, labels):
@@ -518,7 +538,7 @@ class AttentionTrainer:
             news_ind_pos_neg,
         ) in tqdm(self.train_dataloader):
             self.optimizer.zero_grad()
-            model_input = self.train_news_embedding[
+            model_input = self.train_query_news_embeddings[
                 history_indices
             ] * history_attention_mask.unsqueeze(-1)
             outputs = self.attention_model(
@@ -527,7 +547,7 @@ class AttentionTrainer:
 
             res = F.cosine_similarity(
                 outputs[history_rev_index.repeat(2).to(DEVICE)],
-                self.train_news_embedding[news_ind_pos_neg].to(DEVICE),
+                self.train_news_embeddings[news_ind_pos_neg].to(DEVICE),
             )
 
             loss = self.loss_fn(
@@ -605,6 +625,13 @@ class AttentionTrainer:
                 torch.save(
                     self.attention_model.state_dict(), self.ckpt_dir / f"Epoch_{i+1}.pt"
                 )
+                buffer = io.BytesIO()
+                torch.save(self.attention_model.state_dict(), buffer)
+                buffer.seek(0)
+                self.container.upload_blob(
+                    str(self.ckpt_dir / f"Epoch_{i+1}.pt"), buffer
+                )
+                buffer.close()
                 if mean_val_score > best_val_score:
                     torch.save(
                         self.attention_model.state_dict(),

@@ -1,7 +1,11 @@
 from pathlib import Path
+import os
+import io
 from typing import Optional, Any
 import numpy as np
 import torch
+from azure.storage.blob import ContainerClient, BlobClient
+from dotenv import load_dotenv
 from .pipeline import PipelineComponent, check_req_keys
 from .modeling_utils import (
     get_classification_head,
@@ -31,6 +35,8 @@ from .trainer import (
     AttentionReduceTrainer,
     AttentionAttentionTrainer,
 )
+
+load_dotenv()
 
 
 class TransformData(PipelineComponent):
@@ -77,11 +83,20 @@ class EmbeddingsComponent(PipelineComponent):
         check_req_keys(self.required_keys, context_dict)
 
         new_context_dict = context_dict.copy()
-        new_context_dict["news_embeddings"] = get_embeddings(
-            self.model_path,
-            new_context_dict["news_list"],
-            new_context_dict["news_text_dict"],
-        )
+        if self.model_path == "nvidia/NV-Embed-v2":
+            embeds = get_embeddings(
+                self.model_path,
+                new_context_dict["news_list"],
+                new_context_dict["news_text_dict"],
+            )
+            new_context_dict["query_news_embeddings"] = embeds[0]
+            new_context_dict["news_embeddings"] = embeds[1]
+        else:
+            new_context_dict["news_embeddings"] = get_embeddings(
+                self.model_path,
+                new_context_dict["news_list"],
+                new_context_dict["news_text_dict"],
+            )
 
         return new_context_dict
 
@@ -91,6 +106,15 @@ class SaveEmbeddingComponent(PipelineComponent):
 
     def __init__(self, save_dir: Path):
         self.save_dir = save_dir
+        account_url = os.environ["ACCOUNT_URL"]
+        container_name = os.environ["CONTAINER_NAME"]
+        blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
+
+        self.container = ContainerClient(
+            account_url=account_url,
+            container_name=container_name,
+            credential=blob_sas_token,
+        )
 
     def transform(
         self,
@@ -102,6 +126,26 @@ class SaveEmbeddingComponent(PipelineComponent):
             context_dict["news_embeddings"],
             self.save_dir / f"{context_dict['news_dataset'].value}.pt",
         )
+        buffer = io.BytesIO()
+        torch.save(context_dict["news_embeddings"], buffer)
+        buffer.seek(0)
+        self.container.upload_blob(
+            str(self.save_dir / f"{context_dict['news_dataset'].value}.pt"), buffer
+        )
+        buffer.close()
+        if "query_news_embeddings" in context_dict:
+            torch.save(
+                context_dict["query_news_embeddings"],
+                self.save_dir / f"query_{context_dict['news_dataset'].value}.pt",
+            )
+            buffer = io.BytesIO()
+            torch.save(context_dict["query_news_embeddings"], buffer)
+            buffer.seek(0)
+            self.container.upload_blob(
+                str(self.save_dir / f"query_{context_dict['news_dataset'].value}.pt"),
+                buffer,
+            )
+            buffer.close()
         return context_dict
 
 
@@ -122,6 +166,11 @@ class LoadEmbeddingComponent(PipelineComponent):
             self.save_dir / f"{context_dict['news_dataset'].value}.pt",
             weights_only=True,
         )
+        if (self.save_dir / f"query_{context_dict['news_dataset'].value}.pt").exists():
+            context_dict["query_news_embeddings"] = torch.load(
+                self.save_dir / f"query_{context_dict['news_dataset'].value}.pt",
+                weights_only=True,
+            )
         return context_dict
 
 
@@ -236,6 +285,7 @@ class AttentionWeightComponent(PipelineComponent):
                 new_context_dict["history_bool"],
                 self.attention_model,
                 self.weight_model,
+                query_news_embeddings=new_context_dict.get("query_news_embeddings"),
             )
         )
         return new_context_dict
@@ -336,6 +386,7 @@ class AttentionComponent(PipelineComponent):
                 new_context_dict["classification_preds"],
                 new_context_dict["history_bool"],
                 self.attention_model,
+                query_news_embeddings=new_context_dict.get("query_news_embeddings"),
             )
         )
         return new_context_dict
@@ -379,6 +430,8 @@ class AttentionComponent(PipelineComponent):
             max_neg_ratio=self.max_neg_ratio,
             max_pos_ratio=self.max_pos_ratio,
             rng=self.rng,
+            train_query_news_embeddings=context_dict.get("query_news_embeddings"),
+            val_query_news_embeddings=val_context_dict.get("query_news_embeddings"),
         )
         attention_weight_trainer.train(self.num_epochs)
         if self.ckpt_dir:

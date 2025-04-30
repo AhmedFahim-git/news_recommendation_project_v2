@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Iterable
+from typing import Iterable, Optional
 import sqlite3
 import numpy as np
 import pandas as pd
@@ -31,6 +31,8 @@ from .modeling_utils import (
     WeightedSumModel,
     store_embed_from_model,
     get_token_attn_model,
+    get_nvembed_model,
+    get_nv_embeds,
 )
 from .batch_size_finder import (
     get_classification_inference_batch_size,
@@ -42,6 +44,12 @@ from .batch_size_finder import (
 def get_embeddings(
     model_path: str, news_list: Iterable[str], news_text_dict: dict[str, str]
 ):
+    if model_path == "nvidia/NV-Embed-v2":
+        model = get_nvembed_model(model_path)
+        text_list = [news_text_dict[i] for i in news_list]
+        query_embeds = get_nv_embeds(model, text_list, "query").detach().cpu()
+        passage_embeds = get_nv_embeds(model, text_list, "passage").detach().cpu()
+        return query_embeds, passage_embeds
     news_text_dataset = NewsTextDataset(news_list, news_text_dict)
     model, tokenizer = get_model_and_tokenizer(model_path)
     text_collate_fn = partial(
@@ -83,7 +91,8 @@ def get_final_attention_eval(
     model: torch.nn.Module,
 ):
     attention_dataset = FinalAttentionEvalDataset(history_rev_index, history_len_list)
-    batch_size = get_attention_inference_batch_size(model)
+    # batch_size = get_attention_inference_batch_size(model) - 1000
+    batch_size = 100
     print(f"Batch size for attention model inference {batch_size}")
     attention_dataloader = DataLoader(
         attention_dataset,
@@ -135,6 +144,7 @@ def get_cos_sim_scores(
     impression_len_list: np.ndarray,
     news_embeddings: torch.Tensor,
     model: torch.nn.Module,
+    query_news_embeddings: Optional[torch.Tensor] = None,
 ):
     assert len(history_len_list) == len(
         impression_len_list
@@ -142,9 +152,14 @@ def get_cos_sim_scores(
     assert sum(impression_len_list) == len(
         news_rev_index
     ), "Number of impressions should match length of impression list"
-    history_embeds = get_final_attention_eval(
-        history_rev_index, history_len_list, news_embeddings, model
-    )
+    if isinstance(query_news_embeddings, torch.Tensor):
+        history_embeds = get_final_attention_eval(
+            history_rev_index, history_len_list, query_news_embeddings, model
+        )
+    else:
+        history_embeds = get_final_attention_eval(
+            history_rev_index, history_len_list, news_embeddings, model
+        )
     grouped_rev_index = group_items(news_rev_index, impression_len_list)
     result_list = []
     for i, sub_list in enumerate(grouped_rev_index):
@@ -165,6 +180,7 @@ def get_cos_sim_final_score(
     classification_score: np.ndarray,
     attention_model: torch.nn.Module,
     weight_model: WeightedSumModel,
+    query_news_embeddings: Optional[torch.Tensor] = None,
 ) -> np.ndarray:
     return (
         weight_model(
@@ -175,6 +191,7 @@ def get_cos_sim_final_score(
                 impression_len_list,
                 news_embeddings,
                 attention_model,
+                query_news_embeddings=query_news_embeddings,
             ),
             torch.tensor(classification_score[news_rev_index], device=DEVICE),
         )
@@ -194,6 +211,7 @@ def get_final_score(
     history_bool: pd.Series,
     attention_model: torch.nn.Module,
     weight_model: WeightedSumModel,
+    query_news_embeddings: Optional[torch.Tensor] = None,
 ):
     scores = classification_score[news_rev_index]
     imp_len_list = list(impression_len_list)
@@ -207,6 +225,7 @@ def get_final_score(
         classification_score,
         attention_model,
         weight_model,
+        query_news_embeddings=query_news_embeddings,
     )
 
     scores[history_bool.repeat(imp_len_list)] = history_score
@@ -223,6 +242,7 @@ def get_final_only_attention_score(
     classification_score: np.ndarray,
     history_bool: pd.Series,
     attention_model: torch.nn.Module,
+    query_news_embeddings: Optional[torch.Tensor] = None,
 ):
     scores = classification_score[news_rev_index]
     imp_len_list = list(impression_len_list)
@@ -235,6 +255,7 @@ def get_final_only_attention_score(
             impression_len_list[history_bool],
             news_embeddings,
             attention_model,
+            query_news_embeddings=query_news_embeddings,
         )
         .detach()
         .cpu()
@@ -304,7 +325,9 @@ def apply_token_attn(model_path, db_name, num_samples):
 
     collate_fn = partial(token_attention_eval_collate_fn, conn=conn)
 
-    batch_size = get_token_attention_inference_batch_size(model)
+    batch_size = get_token_attention_inference_batch_size(model) - 10
+    print(batch_size)
+    # batch_size = 50
 
     eval_dataloader = DataLoader(
         dataset=ds,

@@ -9,10 +9,13 @@
 mkdir data
 mkdir data/processed
 mkdir data/processed/MINDsmall_train
+mkdir data/processed/MINDsmall_dev
 
-mv ../mydb_train.sqlite ./
-mv ../behaviors.parquet data/processed/MINDsmall_train/
-mv ../news_text.parquet data/processed/MINDsmall_train/
+mv ../MINDsmall_train/behaviors.parquet data/processed/MINDsmall_train/
+mv ../MINDsmall_train/news_text.parquet data/processed/MINDsmall_train/
+
+mv ../MINDsmall_dev/behaviors.parquet data/processed/MINDsmall_dev/
+mv ../MINDsmall_dev/news_text.parquet data/processed/MINDsmall_dev/
 
 # az storage blob download --container-name $CONTAINER_NAME --account-name $BUCKET_NAME --file data/processed/MINDsmall_train/behaviors.parquet --name behaviors.parquet --auth-mode key --sas-token $BLOB_SAS_TOKEN
 # az storage blob download --container-name $CONTAINER_NAME --account-name $BUCKET_NAME --file data/processed/MINDsmall_train/news_text.parquet --name news_text.parquet --auth-mode key --sas-token $BLOB_SAS_TOKEN

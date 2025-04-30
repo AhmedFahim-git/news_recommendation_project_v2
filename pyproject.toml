@@ -26,4 +26,4 @@ license = { file = "LICENSE" }
 
 
 [project.scripts]
-store_process_data = "news_rec_utils.prepare_data:main"
+store_process_data = "news_rec_utils.data_utils:main"

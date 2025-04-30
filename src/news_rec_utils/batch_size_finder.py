@@ -9,7 +9,7 @@ from .dummy import (
     dummy_attention_attention_inputs_outputs,
     dummy_token_attention_inputs_outputs,
 )
-from .config import NEWS_TEXT_MAXLEN, IMPRESSION_MAXLEN
+from .config import NEWS_TEXT_MAXLEN, IMPRESSION_MAXLEN, NUM_WORKERS
 
 
 # Keys are ModelConfig_str(optimizer_type)_task_max_len. Value is batch size
@@ -87,6 +87,16 @@ def dummy_train_func(model, optimizer, dummy_func, batch_size):
     # with torch.autocast("cuda", torch.float16):
     model(**dummy_func(batch_size=batch_size)["inputs"]).min().backward()
     optimizer.zero_grad()
+
+
+def dummy_nv_embed_func(model, batch_size):
+    model._do_encode(
+        ["Some text" * NEWS_TEXT_MAXLEN] * batch_size,
+        instruction="",
+        max_length=NEWS_TEXT_MAXLEN,
+        num_workers=NUM_WORKERS,
+        batch_size=batch_size,
+    )
 
 
 def check_batch_size(test_func, batch_size: int):
@@ -254,3 +264,12 @@ def get_token_attention_inference_batch_size(model: torch.nn.Module):
             )
         )
     return BATCH_SIZES[key] - 5
+
+
+def get_nv_embed_batch_size(model):
+    model_part = "nv_embed"
+    task_type = "INFERENCE"
+    key = model_part + task_type
+    if key not in BATCH_SIZES:
+        BATCH_SIZES[key] = get_batch_size(partial(dummy_nv_embed_func, model=model))
+    return BATCH_SIZES[key]
