@@ -80,7 +80,9 @@ def output_pool(model) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
 
 def get_nvembed_model(path: str, device=DEVICE):
     assert path == "nvidia/NV-Embed-v2"
-    return AutoModel.from_pretrained("nvidia/NV-Embed-v2", trust_remote_code=True)
+    return AutoModel.from_pretrained("nvidia/NV-Embed-v2", trust_remote_code=True).to(
+        device="cuda"
+    )
 
 
 def get_model_and_tokenizer(path: str, device=DEVICE):
