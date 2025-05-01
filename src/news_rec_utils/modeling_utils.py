@@ -1,5 +1,6 @@
 from typing import Optional, Callable
 from pathlib import Path
+import os
 from collections.abc import Iterable
 from contextlib import nullcontext
 import gc
@@ -15,7 +16,7 @@ from transformers.modeling_outputs import (
 from transformers.tokenization_utils import BatchEncoding
 from transformers import AutoModel, AutoTokenizer, AutoConfig
 from transformers.modeling_utils import PreTrainedModel
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from .config import (
     DEVICE,
     EMBEDDING_DIM,
@@ -247,18 +248,32 @@ def get_embed_from_model(
 
 
 def get_nv_embeds(model, texts: list[str], type: str):
-    batch_size = get_nv_embed_batch_size(model)
+    batch_size = 128  # get_nv_embed_batch_size(model)
     if type == "query":
         instruction = QUERY_INSTRUCTION
     else:
         instruction = ""
-    return model._do_encode(
-        texts,
-        batch_size=batch_size,
-        instruction=instruction,
-        max_length=NEWS_TEXT_MAXLEN,
-        num_workers=NUM_WORKERS,
-    )
+    res_list = []
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    for i in trange(0, len(texts), batch_size):
+        sub_text = texts[i : i + batch_size]
+        res_list.append(
+            F.normalize(
+                model.encode(
+                    sub_text, instruction=instruction, max_length=NEWS_TEXT_MAXLEN
+                ),
+                p=2,
+                dim=1,
+            )
+        )
+    return torch.concatenate(res_list)
+    # return model._do_encode(
+    #     texts,
+    #     batch_size=batch_size,
+    #     instruction=instruction,
+    #     max_length=NEWS_TEXT_MAXLEN,
+    #     num_workers=NUM_WORKERS,
+    # )
 
 
 def get_model_eval(

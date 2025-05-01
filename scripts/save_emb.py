@@ -25,10 +25,10 @@ def main():
 
     rng = np.random.default_rng(1234)
     train_behaviors, train_news_text_dict = load_dataset(
-        data_dir, NewsDataset.MINDsmall_train, random_state=rng, num_samples=2000
+        data_dir, NewsDataset.MINDsmall_train, random_state=rng
     )
     val_behaviors, val_news_text_dict = load_dataset(
-        data_dir, NewsDataset.MINDsmall_dev, random_state=rng, num_samples=2000
+        data_dir, NewsDataset.MINDsmall_dev, random_state=rng
     )
 
     transform_component = TransformData()
@@ -38,7 +38,7 @@ def main():
     load_component = LoadEmbeddingComponent(save_dir)
 
     save_pipeline = Pipeline(
-        "train_subset",
+        "train_small",
         [
             ("init_transform", transform_component),
             ("model_embed", embedding_component),
@@ -50,7 +50,7 @@ def main():
     )
 
     load_pipeline = Pipeline(
-        "train_subset",
+        "train_small",
         [("init_transform", transform_component), ("load_embedding", load_component)],
     )
 
