@@ -90,13 +90,14 @@ def dummy_train_func(model, optimizer, dummy_func, batch_size):
 
 
 def dummy_nv_embed_func(model, batch_size):
-    model._do_encode(
-        ["Some text" * NEWS_TEXT_MAXLEN] * batch_size,
-        instruction="",
-        max_length=NEWS_TEXT_MAXLEN,
-        num_workers=NUM_WORKERS,
-        batch_size=batch_size,
-    )
+    with torch.no_grad():
+        model._do_encode(
+            ["Some text" * NEWS_TEXT_MAXLEN] * batch_size,
+            instruction="",
+            max_length=NEWS_TEXT_MAXLEN,
+            num_workers=NUM_WORKERS,
+            batch_size=batch_size,
+        )
 
 
 def check_batch_size(test_func, batch_size: int):

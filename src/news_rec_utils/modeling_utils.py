@@ -251,7 +251,7 @@ def get_embed_from_model(
 
 def get_nv_embeds(model, texts: list[str], type: str):
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    batch_size = get_nv_embed_batch_size(model)
+    batch_size = get_nv_embed_batch_size(model) - 5
     if type == "query":
         instruction = QUERY_INSTRUCTION
     else:
@@ -269,13 +269,14 @@ def get_nv_embeds(model, texts: list[str], type: str):
     #         )
     #     )
     # return torch.concatenate(res_list)
-    res = model._do_encode(
-        texts,
-        batch_size=batch_size,
-        instruction=instruction,
-        max_length=NEWS_TEXT_MAXLEN,
-        num_workers=NUM_WORKERS,
-    )
+    with torch.no_grad():
+        res = model._do_encode(
+            texts,
+            batch_size=batch_size,
+            instruction=instruction,
+            max_length=NEWS_TEXT_MAXLEN,
+            num_workers=NUM_WORKERS,
+        )
     return F.normalize(res, p=2, dim=1)
 
 
