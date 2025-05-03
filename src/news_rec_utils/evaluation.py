@@ -61,6 +61,7 @@ def score(
     debug_dir: Optional[Path] = None,
 ) -> dict[str, float]:
     pool_submit = zip(labels_input, preds_input, range(len(preds_input)))
+    print("starting scoring")
 
     with ProcessPoolExecutor(NUM_WORKERS) as executor:
         aucs, mrrs, ndcg5s, ndcg10s = zip(

@@ -265,6 +265,7 @@ def group_items(
     cumsum_lengths = np.concatenate([[0], imp_counts.cumsum()])
     for i in range(len(imp_counts)):
         result_list.append(func(items[cumsum_lengths[i] : cumsum_lengths[i + 1]]))
+    print("In grouping items")
     return np.array(result_list, dtype=object)
 
 

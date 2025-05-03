@@ -67,7 +67,7 @@ def get_reduced_dim_embeds(embeddings: torch.Tensor, model: torch.nn.Module):
 def get_classification_preds(
     news_embeddings: torch.Tensor, model: ClassificationHead
 ) -> np.ndarray:
-    batch_size = get_classification_inference_batch_size(model)
+    batch_size = 46336  # get_classification_inference_batch_size(model)
     print(f"Batch size for classification model inference {batch_size}")
     embedding_dataset = EmbeddingDataset(news_embeddings)
     dataloader = DataLoader(embedding_dataset, batch_size=batch_size, shuffle=False)
@@ -78,6 +78,7 @@ def get_classification_baseline_scores(
     news_embeddings: torch.Tensor, model: ClassificationHead, news_rev_index: np.ndarray
 ) -> dict[str, np.ndarray]:
     classification_preds = get_classification_preds(news_embeddings, model)
+    print("Classification inference scores obtained")
     return {
         "classification_preds": classification_preds,
         "baseline_scores": classification_preds[news_rev_index],
@@ -91,8 +92,8 @@ def get_final_attention_eval(
     model: torch.nn.Module,
 ):
     attention_dataset = FinalAttentionEvalDataset(history_rev_index, history_len_list)
-    # batch_size = get_attention_inference_batch_size(model) - 1000
-    batch_size = 100
+    batch_size = get_attention_inference_batch_size(model) - 1000
+    # batch_size = 100
     print(f"Batch size for attention model inference {batch_size}")
     attention_dataloader = DataLoader(
         attention_dataset,

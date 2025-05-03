@@ -82,9 +82,9 @@ class ClassificationModelTrainer:
 
         self.optimizer = AdamW(self.model.parameters(), lr=1e-5)
 
-        self.train_batch_size = (
-            get_classification_train_batch_size(self.model, self.optimizer) // 2
-        )
+        self.train_batch_size = 149056  # (
+        #     get_classification_train_batch_size(self.model, self.optimizer) // 2
+        # )
 
         print(
             f"Batch size for training Classification model is {self.train_batch_size}"
@@ -630,6 +630,7 @@ class AttentionTrainer:
                 torch.save(
                     self.attention_model.state_dict(), self.ckpt_dir / f"Epoch_{i+1}.pt"
                 )
+                print("saving in azure")
                 buffer = io.BytesIO()
                 torch.save(self.attention_model.state_dict(), buffer)
                 buffer.seek(0)
@@ -637,6 +638,7 @@ class AttentionTrainer:
                     str(self.ckpt_dir / f"Epoch_{i+1}.pt"), buffer
                 )
                 buffer.close()
+                print("saving to azure complete")
                 if mean_val_score > best_val_score:
                     torch.save(
                         self.attention_model.state_dict(),
