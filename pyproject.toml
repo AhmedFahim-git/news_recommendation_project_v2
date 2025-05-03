@@ -17,7 +17,7 @@ dependencies = [
     # 'einops',
     'datasets',
     "scikit-learn",
-    # "transformers==4.42.4",
+    "transformers",
     "pyarrow",
 ]
 requires-python = ">=3.9"

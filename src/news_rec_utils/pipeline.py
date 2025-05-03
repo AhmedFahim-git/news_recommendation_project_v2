@@ -35,8 +35,8 @@ class Pipeline:
         name: str,
         steps: Iterable[tuple[str, PipelineComponent]],
         use_cache: bool = True,
-        # cache_dir: Path = Path("cache"),
-        cache_dir: Path = Path("/content/drive/MyDrive/cache"),
+        cache_dir: Path = Path("cache"),
+        # cache_dir: Path = Path("/content/drive/MyDrive/cache"),
     ):
         self.name = name
         self._steps = list(steps)

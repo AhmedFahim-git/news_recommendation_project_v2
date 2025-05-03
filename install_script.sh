@@ -17,6 +17,8 @@ mv ../MINDsmall_train/news_text.parquet data/processed/MINDsmall_train/
 mv ../MINDsmall_dev/behaviors.parquet data/processed/MINDsmall_dev/
 mv ../MINDsmall_dev/news_text.parquet data/processed/MINDsmall_dev/
 
+mv ../embeddings ./
+
 export TOKENIZERS_PARALLELISM=false
 
 # az storage blob download --container-name $CONTAINER_NAME --account-name $BUCKET_NAME --file data/processed/MINDsmall_train/behaviors.parquet --name behaviors.parquet --auth-mode key --sas-token $BLOB_SAS_TOKEN
