@@ -19,6 +19,10 @@ mv ../MINDsmall_dev/news_text.parquet data/processed/MINDsmall_dev/
 
 mv ../embeddings ./
 
+mkdir models
+
+mv ../classification_head models/
+
 export TOKENIZERS_PARALLELISM=false
 
 # az storage blob download --container-name $CONTAINER_NAME --account-name $BUCKET_NAME --file data/processed/MINDsmall_train/behaviors.parquet --name behaviors.parquet --auth-mode key --sas-token $BLOB_SAS_TOKEN

@@ -42,7 +42,9 @@ def main():
     load_component = LoadEmbeddingComponent(save_dir)
 
     classification_component = ClassificationComponent(
-        # model_path=ckpt_root_dir / "classification_head" / "Best_model.pt",
+        model_path=ckpt_root_dir
+        / "classification_head"
+        / "Best_model_nv_embed_final_attention.pt",
         log_dir=log_dir,
         ckpt_dir=ckpt_root_dir / "classification_head",
         num_epochs=5,

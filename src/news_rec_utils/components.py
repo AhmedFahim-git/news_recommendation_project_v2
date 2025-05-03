@@ -14,6 +14,7 @@ from .modeling_utils import (
     get_new_attention_model,
     get_reducing_model,
     get_token_attn_model,
+    get_latent_attention_model,
 )
 from .data_utils import (
     split_impressions_and_history,
@@ -188,6 +189,10 @@ class ClassificationComponent(PipelineComponent):
         rng=np.random.default_rng(1234),
     ):
         self.model = get_classification_head(model_path)
+        if model_path is None:
+            self.model_trained = False
+        else:
+            self.model_trained = True
         self.num_epochs = num_epochs
         self.exp_name = exp_name
         self.rng = rng
@@ -212,6 +217,8 @@ class ClassificationComponent(PipelineComponent):
         context_dict: dict[str, Any],
         val_context_dict: Optional[dict[str, Any]] = None,
     ):
+        if self.model_trained:
+            return
         assert val_context_dict, "We need the validation data"
         check_req_keys(self.train_required_keys, context_dict)
         check_req_keys(self.train_required_keys, val_context_dict)
@@ -364,7 +371,8 @@ class AttentionComponent(PipelineComponent):
         max_pos_ratio: Optional[float] = None,
         rng=np.random.default_rng(1234),
     ):
-        self.attention_model = get_final_attention_model(attention_model_path)
+        # self.attention_model = get_final_attention_model(attention_model_path)
+        self.attention_model = get_latent_attention_model(attention_model_path)
         self.num_epochs = num_epochs
         self.exp_name = exp_name
         self.rng = rng

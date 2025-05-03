@@ -29,6 +29,7 @@ from .config import (
 )
 from .attention import NewAttention, MyEncoder
 from .batch_size_finder import get_text_inference_batch_size, get_nv_embed_batch_size
+from .latent_attention import LatentAttentionModel
 
 
 # @torch.compile
@@ -116,6 +117,13 @@ def get_classification_head(model_path: Optional[Path] = None):
     model = ClassificationHead(
         in_dim=EMBEDDING_DIM, hidden_dim=EMBEDDING_DIM, out_dim=1
     )
+    if model_path:
+        model.load_state_dict(torch.load(model_path, weights_only=True))
+    return model.to(DEVICE)
+
+
+def get_latent_attention_model(model_path: Optional[Path] = None):
+    model = LatentAttentionModel()
     if model_path:
         model.load_state_dict(torch.load(model_path, weights_only=True))
     return model.to(DEVICE)

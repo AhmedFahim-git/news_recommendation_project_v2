@@ -14,7 +14,7 @@ dependencies = [
     "pandas",
     "scipy",
     # "flash-attn",
-    # 'einops',
+    'einops',
     'datasets',
     "scikit-learn",
     "transformers",
