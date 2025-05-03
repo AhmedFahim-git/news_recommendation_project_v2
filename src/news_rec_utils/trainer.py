@@ -447,7 +447,7 @@ class AttentionTrainer:
 
         self.optimizer = AdamW(
             self.attention_model.parameters(),
-            lr=1e-4,
+            lr=1e-6,
         )
 
         self.loss_fn = torch.nn.MarginRankingLoss(2)
@@ -486,6 +486,11 @@ class AttentionTrainer:
         self.train_labels = train_labels
         self.train_impression_len_list = train_impression_len_list
 
+        if isinstance(val_query_news_embeddings, torch.Tensor):
+            self.val_query_news_embeddings = val_query_news_embeddings
+        else:
+            self.val_query_news_embeddings = val_news_embeddings
+
         self.val_eval_score_func = partial(
             get_cos_sim_scores,
             history_rev_index=val_history_rev_index,
@@ -511,15 +516,15 @@ class AttentionTrainer:
             shuffle=False,
             collate_fn=final_attention_train_collate_fn,
         )
-        account_url = os.environ["ACCOUNT_URL"]
-        container_name = os.environ["CONTAINER_NAME"]
-        blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
+        # account_url = os.environ["ACCOUNT_URL"]
+        # container_name = os.environ["CONTAINER_NAME"]
+        # blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
 
-        self.container = ContainerClient(
-            account_url=account_url,
-            container_name=container_name,
-            credential=blob_sas_token,
-        )
+        # self.container = ContainerClient(
+        #     account_url=account_url,
+        #     container_name=container_name,
+        #     credential=blob_sas_token,
+        # )
 
     def _get_val_score(self, res, impression_len_list, labels):
         grouped_preds = rank_group_preds(
@@ -625,13 +630,13 @@ class AttentionTrainer:
                 torch.save(
                     self.attention_model.state_dict(), self.ckpt_dir / f"Epoch_{i+1}.pt"
                 )
-                buffer = io.BytesIO()
-                torch.save(self.attention_model.state_dict(), buffer)
-                buffer.seek(0)
-                self.container.upload_blob(
-                    str(self.ckpt_dir / f"Epoch_{i+1}.pt"), buffer
-                )
-                buffer.close()
+                # buffer = io.BytesIO()
+                # torch.save(self.attention_model.state_dict(), buffer)
+                # buffer.seek(0)
+                # self.container.upload_blob(
+                #     str(self.ckpt_dir / f"Epoch_{i+1}.pt"), buffer
+                # )
+                # buffer.close()
                 if mean_val_score > best_val_score:
                     torch.save(
                         self.attention_model.state_dict(),

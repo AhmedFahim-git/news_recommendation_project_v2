@@ -19,10 +19,14 @@ from news_rec_utils.evaluation import score
 
 
 def main():
-    data_dir = Path("data")
-    log_dir = Path("logs")
-    ckpt_root_dir = Path("models")
-    save_dir = Path("embeddings")
+    # data_dir = Path("data")
+    data_dir = Path("/content/drive/MyDrive/MIND_dataset")
+    # log_dir = Path("logs")
+    log_dir = Path("/content/drive/MyDrive/log_dir")
+    # ckpt_root_dir = Path("models")
+    ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
+    # save_dir = Path("embeddings")
+    save_dir = Path("/content/drive/MyDrive/embeddings")
     exp_name = "nv_embed_final_attention"
 
     rng = np.random.default_rng(1234)
@@ -41,7 +45,7 @@ def main():
         # model_path=ckpt_root_dir / "classification_head" / "Best_model.pt",
         log_dir=log_dir,
         ckpt_dir=ckpt_root_dir / "classification_head",
-        num_epochs=5,
+        num_epochs=1,
         rng=rng,
         exp_name=exp_name,
     )
@@ -65,7 +69,7 @@ def main():
     attention_only_component = AttentionComponent(
         log_dir=log_dir,
         ckpt_dir=ckpt_root_dir / "attention_model",
-        num_epochs=5,
+        num_epochs=1,
         exp_name=exp_name,
         # max_neg_ratio=1 / 5,
         rng=rng,
@@ -86,7 +90,7 @@ def main():
     # )
 
     train_pipeline = Pipeline(
-        "train_gte_1_5_small",
+        "nv_embed_small",
         [
             ("init_transform", transform_component),
             ("load_embedding", load_component),
