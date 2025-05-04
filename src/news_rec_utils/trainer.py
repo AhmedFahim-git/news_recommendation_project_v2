@@ -516,15 +516,15 @@ class AttentionTrainer:
             shuffle=False,
             collate_fn=final_attention_train_collate_fn,
         )
-        account_url = os.environ["ACCOUNT_URL"]
-        container_name = os.environ["CONTAINER_NAME"]
-        blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
+        # account_url = os.environ["ACCOUNT_URL"]
+        # container_name = os.environ["CONTAINER_NAME"]
+        # blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
 
-        self.container = ContainerClient(
-            account_url=account_url,
-            container_name=container_name,
-            credential=blob_sas_token,
-        )
+        # self.container = ContainerClient(
+        #     account_url=account_url,
+        #     container_name=container_name,
+        #     credential=blob_sas_token,
+        # )
 
     def _get_val_score(self, res, impression_len_list, labels):
         grouped_preds = rank_group_preds(
@@ -630,15 +630,15 @@ class AttentionTrainer:
                 torch.save(
                     self.attention_model.state_dict(), self.ckpt_dir / f"Epoch_{i+1}.pt"
                 )
-                print("saving in azure")
-                buffer = io.BytesIO()
-                torch.save(self.attention_model.state_dict(), buffer)
-                buffer.seek(0)
-                self.container.upload_blob(
-                    str(self.ckpt_dir / f"Epoch_{i+1}.pt"), buffer
-                )
-                buffer.close()
-                print("saving to azure complete")
+                # print("saving in azure")
+                # buffer = io.BytesIO()
+                # torch.save(self.attention_model.state_dict(), buffer)
+                # buffer.seek(0)
+                # self.container.upload_blob(
+                #     str(self.ckpt_dir / f"Epoch_{i+1}.pt"), buffer
+                # )
+                # buffer.close()
+                # print("saving to azure complete")
                 if mean_val_score > best_val_score:
                     torch.save(
                         self.attention_model.state_dict(),

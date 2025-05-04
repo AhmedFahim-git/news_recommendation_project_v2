@@ -19,15 +19,15 @@ from news_rec_utils.evaluation import score
 
 
 def main():
-    data_dir = Path("data")
-    # data_dir = Path("/content/drive/MyDrive/MIND_dataset")
-    log_dir = Path("logs")
-    # log_dir = Path("/content/drive/MyDrive/log_dir")
-    ckpt_root_dir = Path("models")
-    # ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
-    save_dir = Path("embeddings")
-    # save_dir = Path("/content/drive/MyDrive/embeddings")
-    exp_name = "nv_embed_final_attention"
+    # data_dir = Path("data")
+    data_dir = Path("/content/drive/MyDrive/MIND_dataset")
+    # log_dir = Path("logs")
+    log_dir = Path("/content/drive/MyDrive/log_dir")
+    # ckpt_root_dir = Path("models")
+    ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
+    # save_dir = Path("embeddings")
+    save_dir = Path("/content/drive/MyDrive/embeddings")
+    exp_name = "e5_embed_final_attention"
 
     rng = np.random.default_rng(1234)
     train_behaviors, train_news_text_dict = load_dataset(
@@ -42,9 +42,9 @@ def main():
     load_component = LoadEmbeddingComponent(save_dir)
 
     classification_component = ClassificationComponent(
-        model_path=ckpt_root_dir
-        / "classification_head"
-        / "Best_model_nv_embed_final_attention.pt",
+        # model_path=ckpt_root_dir
+        # / "classification_head"
+        # / "Best_model_nv_embed_final_attention.pt",
         log_dir=log_dir,
         ckpt_dir=ckpt_root_dir / "classification_head",
         num_epochs=5,

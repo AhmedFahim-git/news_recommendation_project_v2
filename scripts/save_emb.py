@@ -18,9 +18,11 @@ from news_rec_utils.evaluation import score
 
 
 def main():
-    data_dir = Path("data")
+    # data_dir = Path("data")
+    data_dir = Path("/content/drive/MyDrive/MIND_dataset")
     # log_dir = Path("logs")
-    save_dir = Path("embeddings")
+    # save_dir = Path("embeddings")
+    save_dir = Path("/content/drive/MyDrive/embeddings")
     exp_name = "ranking_loss_attn"
 
     rng = np.random.default_rng(1234)

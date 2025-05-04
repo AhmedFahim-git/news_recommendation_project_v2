@@ -107,15 +107,15 @@ class SaveEmbeddingComponent(PipelineComponent):
 
     def __init__(self, save_dir: Path):
         self.save_dir = save_dir
-        account_url = os.environ["ACCOUNT_URL"]
-        container_name = os.environ["CONTAINER_NAME"]
-        blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
+        # account_url = os.environ["ACCOUNT_URL"]
+        # container_name = os.environ["CONTAINER_NAME"]
+        # blob_sas_token = os.environ["BLOB_SAS_TOKEN"]
 
-        self.container = ContainerClient(
-            account_url=account_url,
-            container_name=container_name,
-            credential=blob_sas_token,
-        )
+        # self.container = ContainerClient(
+        #     account_url=account_url,
+        #     container_name=container_name,
+        #     credential=blob_sas_token,
+        # )
 
     def transform(
         self,
@@ -127,26 +127,26 @@ class SaveEmbeddingComponent(PipelineComponent):
             context_dict["news_embeddings"],
             self.save_dir / f"{context_dict['news_dataset'].value}.pt",
         )
-        buffer = io.BytesIO()
-        torch.save(context_dict["news_embeddings"], buffer)
-        buffer.seek(0)
-        self.container.upload_blob(
-            str(self.save_dir / f"{context_dict['news_dataset'].value}.pt"), buffer
-        )
-        buffer.close()
+        # buffer = io.BytesIO()
+        # torch.save(context_dict["news_embeddings"], buffer)
+        # buffer.seek(0)
+        # self.container.upload_blob(
+        #     str(self.save_dir / f"{context_dict['news_dataset'].value}.pt"), buffer
+        # )
+        # buffer.close()
         if "query_news_embeddings" in context_dict:
             torch.save(
                 context_dict["query_news_embeddings"],
                 self.save_dir / f"query_{context_dict['news_dataset'].value}.pt",
             )
-            buffer = io.BytesIO()
-            torch.save(context_dict["query_news_embeddings"], buffer)
-            buffer.seek(0)
-            self.container.upload_blob(
-                str(self.save_dir / f"query_{context_dict['news_dataset'].value}.pt"),
-                buffer,
-            )
-            buffer.close()
+            # buffer = io.BytesIO()
+            # torch.save(context_dict["query_news_embeddings"], buffer)
+            # buffer.seek(0)
+            # self.container.upload_blob(
+            #     str(self.save_dir / f"query_{context_dict['news_dataset'].value}.pt"),
+            #     buffer,
+            # )
+            # buffer.close()
         return context_dict
 
 
@@ -371,8 +371,8 @@ class AttentionComponent(PipelineComponent):
         max_pos_ratio: Optional[float] = None,
         rng=np.random.default_rng(1234),
     ):
-        # self.attention_model = get_final_attention_model(attention_model_path)
-        self.attention_model = get_latent_attention_model(attention_model_path)
+        self.attention_model = get_final_attention_model(attention_model_path)
+        # self.attention_model = get_latent_attention_model(attention_model_path)
         self.num_epochs = num_epochs
         self.exp_name = exp_name
         self.rng = rng

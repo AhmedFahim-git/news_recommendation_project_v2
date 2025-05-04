@@ -21,6 +21,7 @@ from .config import (
     NEWS_TEXT_MAXLEN,
     NUM_WORKERS,
     DEVICE,
+    QUERY_INSTRUCTION,
 )
 from .modeling_utils import (
     get_model_and_tokenizer,
@@ -50,11 +51,32 @@ def get_embeddings(
         query_embeds = get_nv_embeds(model, text_list, "query").detach().cpu()
         passage_embeds = get_nv_embeds(model, text_list, "passage").detach().cpu()
         return query_embeds, passage_embeds
-    news_text_dataset = NewsTextDataset(news_list, news_text_dict)
     model, tokenizer = get_model_and_tokenizer(model_path)
     text_collate_fn = partial(
         eval_collate_fn, tokenizer=tokenizer, max_len=NEWS_TEXT_MAXLEN
     )
+    if model_path == "intfloat/multilingual-e5-large-instruct":
+        query_news_text_dict = {
+            k: QUERY_INSTRUCTION + v for k, v in news_text_dict.items()
+        }
+        query_news_text_dataset = NewsTextDataset(news_list, query_news_text_dict)
+        passage_news_text_dataset = NewsTextDataset(news_list, news_text_dict)
+        query_embeds = F.normalize(
+            get_embed_from_model(
+                model, query_news_text_dataset, NEWS_TEXT_MAXLEN, text_collate_fn
+            ),
+            p=2,
+            dim=1,
+        )
+        passage_embeds = F.normalize(
+            get_embed_from_model(
+                model, passage_news_text_dataset, NEWS_TEXT_MAXLEN, text_collate_fn
+            ),
+            p=2,
+            dim=1,
+        )
+        return query_embeds, passage_embeds
+    news_text_dataset = NewsTextDataset(news_list, news_text_dict)
     return get_embed_from_model(
         model, news_text_dataset, NEWS_TEXT_MAXLEN, text_collate_fn
     )

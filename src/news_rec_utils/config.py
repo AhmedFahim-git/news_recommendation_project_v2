@@ -20,11 +20,12 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # MODEL_PATH = "Alibaba-NLP/gte-base-en-v1.5"
 # MODEL_PATH = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
-MODEL_PATH = "nvidia/NV-Embed-v2"
+# MODEL_PATH = "nvidia/NV-Embed-v2"
+MODEL_PATH = "intfloat/multilingual-e5-large-instruct"
 
-NEWS_TEXT_MAXLEN = 700  # Actually close to 600
+NEWS_TEXT_MAXLEN = 512  # Actually close to 600
 
-EMBEDDING_DIM = 4096
+EMBEDDING_DIM = 1024
 
 REDUCED_DIM = 768
 

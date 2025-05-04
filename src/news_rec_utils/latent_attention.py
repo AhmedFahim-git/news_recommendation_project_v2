@@ -111,8 +111,9 @@ class LatentAttentionModel(torch.nn.Module):
         )
         self.out_layer = torch.nn.Linear(512, 4096)
 
-    def forward(self, hiddens, attention_mask: torch.Tensor = None):
+    def forward(self, embeddings, attention_mask: torch.Tensor = None):
         ## cross-attention block
+        hiddens = embeddings
         cross_attn, cross_ff = self.cross_attend_blocks
         b, *_, device = *hiddens.shape, hiddens.device
         hiddens = self.in_layer(hiddens)

@@ -68,6 +68,8 @@ def output_pool(model) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
         return last_token_pool
     elif model.config.architectures[0] == "NewModel":
         return first_token_pool
+    elif model.config.architectures[0] == "XLMRobertaModel":
+        return average_pool
     else:
         return first_token_pool
     # Alternate implementation
