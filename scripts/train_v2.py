@@ -92,7 +92,7 @@ def main():
     # )
 
     train_pipeline = Pipeline(
-        "nv_embed_small",
+        "e5_small",
         [
             ("init_transform", transform_component),
             ("load_embedding", load_component),
