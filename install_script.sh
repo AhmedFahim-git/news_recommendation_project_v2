@@ -17,11 +17,11 @@ mv ../MINDsmall_train/news_text.parquet data/processed/MINDsmall_train/
 mv ../MINDsmall_dev/behaviors.parquet data/processed/MINDsmall_dev/
 mv ../MINDsmall_dev/news_text.parquet data/processed/MINDsmall_dev/
 
-mv ../embeddings ./
+# mv ../embeddings ./
 
-mkdir models
+# mkdir models
 
-mv ../classification_head models/
+# mv ../classification_head models/
 
 export TOKENIZERS_PARALLELISM=false
 
