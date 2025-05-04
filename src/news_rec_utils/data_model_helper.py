@@ -92,8 +92,8 @@ def get_final_attention_eval(
     model: torch.nn.Module,
 ):
     attention_dataset = FinalAttentionEvalDataset(history_rev_index, history_len_list)
-    batch_size = get_attention_inference_batch_size(model) - 5
-    # batch_size = 100
+    batch_size = get_attention_inference_batch_size(model) // 2
+    # batch_size = 200
     print(f"Batch size for attention model inference {batch_size}")
     attention_dataloader = DataLoader(
         attention_dataset,
