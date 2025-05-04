@@ -27,10 +27,10 @@ def main():
 
     rng = np.random.default_rng(1234)
     train_behaviors, train_news_text_dict = load_dataset(
-        data_dir, NewsDataset.MINDsmall_train, random_state=rng, num_samples=50
+        data_dir, NewsDataset.MINDsmall_train, random_state=rng
     )
     val_behaviors, val_news_text_dict = load_dataset(
-        data_dir, NewsDataset.MINDsmall_dev, random_state=rng, num_samples=50
+        data_dir, NewsDataset.MINDsmall_dev, random_state=rng
     )
 
     transform_component = TransformData()

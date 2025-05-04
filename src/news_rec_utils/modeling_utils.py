@@ -245,7 +245,7 @@ def get_embed_from_model(
     text_maxlen: int,
     text_collate_fn: Callable[[Iterable[str]], BatchEncoding],
 ):
-    text_batch_size = get_text_inference_batch_size(model, text_maxlen)
+    text_batch_size = get_text_inference_batch_size(model, text_maxlen) - 300
     print(f"Batch size for text of {text_maxlen}: {text_batch_size}")
     text_dataloader = DataLoader(
         text_dataset,
