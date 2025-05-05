@@ -372,7 +372,7 @@ class FinalAttentionTrainDataset(Dataset):
         batch_size: int,
         max_neg_raio: Optional[float] = None,
         max_pos_ratio: Optional[float] = None,
-        history_maxlen: Optional[int] = None,
+        # history_maxlen: Optional[int] = None,
         rng=np.random.default_rng(1234),
     ):
         assert len(history_len_list) == len(
@@ -389,7 +389,7 @@ class FinalAttentionTrainDataset(Dataset):
         self.rng = rng
         self.max_neg_ratio = max_neg_raio
         self.max_pos_ratio = max_pos_ratio
-        self.history_maxlen = history_maxlen
+        # self.history_maxlen = history_maxlen
         self.reset()
 
     def __len__(self):
@@ -397,20 +397,7 @@ class FinalAttentionTrainDataset(Dataset):
 
     def __getitem__(self, idx):
         return (
-            (
-                self.group_history[self.pos_neg_indices[idx, 2]]
-                if self.history_maxlen
-                and (
-                    len(self.group_history[self.pos_neg_indices[idx, 2]])
-                    <= self.history_maxlen
-                )
-                else self.rng.choice(
-                    self.group_history[self.pos_neg_indices[idx, 2]],
-                    self.history_maxlen,
-                    replace=False,
-                    shuffle=False,
-                )
-            ),
+            self.group_history[self.pos_neg_indices[idx, 2]],
             self.pos_neg_indices[idx, 0],
             self.pos_neg_indices[idx, 1],
         )

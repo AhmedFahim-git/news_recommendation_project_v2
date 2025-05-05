@@ -167,7 +167,7 @@ def get_cos_sim_scores(
     impression_len_list: np.ndarray,
     news_embeddings: torch.Tensor,
     model: torch.nn.Module,
-    query_news_embeddings: Optional[torch.Tensor] = None,
+    # query_news_embeddings: Optional[torch.Tensor] = None,
 ):
     assert len(history_len_list) == len(
         impression_len_list
@@ -175,14 +175,14 @@ def get_cos_sim_scores(
     assert sum(impression_len_list) == len(
         news_rev_index
     ), "Number of impressions should match length of impression list"
-    if isinstance(query_news_embeddings, torch.Tensor):
-        history_embeds = get_final_attention_eval(
-            history_rev_index, history_len_list, query_news_embeddings, model
-        )
-    else:
-        history_embeds = get_final_attention_eval(
-            history_rev_index, history_len_list, news_embeddings, model
-        )
+    # if isinstance(query_news_embeddings, torch.Tensor):
+    #     history_embeds = get_final_attention_eval(
+    #         history_rev_index, history_len_list, query_news_embeddings, model
+    #     )
+    # else:
+    history_embeds = get_final_attention_eval(
+        history_rev_index, history_len_list, news_embeddings, model
+    )
     grouped_rev_index = group_items(news_rev_index, impression_len_list)
     result_list = []
     for i, sub_list in enumerate(grouped_rev_index):
@@ -203,7 +203,7 @@ def get_cos_sim_final_score(
     classification_score: np.ndarray,
     attention_model: torch.nn.Module,
     weight_model: WeightedSumModel,
-    query_news_embeddings: Optional[torch.Tensor] = None,
+    # query_news_embeddings: Optional[torch.Tensor] = None,
 ) -> np.ndarray:
     return (
         weight_model(
@@ -214,7 +214,7 @@ def get_cos_sim_final_score(
                 impression_len_list,
                 news_embeddings,
                 attention_model,
-                query_news_embeddings=query_news_embeddings,
+                # query_news_embeddings=query_news_embeddings,
             ),
             torch.tensor(classification_score[news_rev_index], device=DEVICE),
         )
@@ -234,7 +234,7 @@ def get_final_score(
     history_bool: pd.Series,
     attention_model: torch.nn.Module,
     weight_model: WeightedSumModel,
-    query_news_embeddings: Optional[torch.Tensor] = None,
+    # query_news_embeddings: Optional[torch.Tensor] = None,
 ):
     scores = classification_score[news_rev_index]
     imp_len_list = list(impression_len_list)
@@ -248,7 +248,7 @@ def get_final_score(
         classification_score,
         attention_model,
         weight_model,
-        query_news_embeddings=query_news_embeddings,
+        # query_news_embeddings=query_news_embeddings,
     )
 
     scores[history_bool.repeat(imp_len_list)] = history_score
@@ -265,7 +265,7 @@ def get_final_only_attention_score(
     classification_score: np.ndarray,
     history_bool: pd.Series,
     attention_model: torch.nn.Module,
-    query_news_embeddings: Optional[torch.Tensor] = None,
+    # query_news_embeddings: Optional[torch.Tensor] = None,
 ):
     scores = classification_score[news_rev_index]
     imp_len_list = list(impression_len_list)
@@ -278,7 +278,7 @@ def get_final_only_attention_score(
             impression_len_list[history_bool],
             news_embeddings,
             attention_model,
-            query_news_embeddings=query_news_embeddings,
+            # query_news_embeddings=query_news_embeddings,
         )
         .detach()
         .cpu()

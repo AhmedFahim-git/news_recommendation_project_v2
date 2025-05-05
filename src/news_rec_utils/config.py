@@ -18,15 +18,15 @@ class DataSubset(Enum):
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# MODEL_PATH = "Alibaba-NLP/gte-base-en-v1.5"
+MODEL_PATH = "Alibaba-NLP/gte-base-en-v1.5"
 # MODEL_PATH = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
 # MODEL_PATH = "nvidia/NV-Embed-v2"
 # MODEL_PATH = "intfloat/multilingual-e5-large-instruct"
-MODEL_PATH = "Alibaba-NLP/gte-large-en-v1.5"
+# MODEL_PATH = "Alibaba-NLP/gte-large-en-v1.5"
 
 NEWS_TEXT_MAXLEN = 700  # Actually close to 600
 
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = 768
 
 REDUCED_DIM = 768
 
@@ -40,14 +40,14 @@ QUERY_INSTRUCTION = "Instruct: Given a news article that the user has read, retr
 
 TORCH_DTYPE = torch.float32
 
-NUM_WORKERS = 2
+NUM_WORKERS = 4
 
-if torch.cuda.is_available():
-    compute_capability = torch.cuda.get_device_capability(DEVICE)
-    if compute_capability >= (8, 0):
-        TORCH_DTYPE = torch.bfloat16
-    elif compute_capability >= (6, 0):
-        TORCH_DTYPE = torch.float16
+# if torch.cuda.is_available():
+#     compute_capability = torch.cuda.get_device_capability(DEVICE)
+#     if compute_capability >= (8, 0):
+#         TORCH_DTYPE = torch.bfloat16
+#     elif compute_capability >= (6, 0):
+#         TORCH_DTYPE = torch.float16
 
 # CLASSIFICATION_MODEL_BATCH_SIZE = 1024
 # ATTENTION_MODEL_BATCH_SIZE = 200
