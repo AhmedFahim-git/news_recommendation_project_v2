@@ -473,8 +473,8 @@ def pad_to_maxlen(
     for i, length in enumerate(len_list):
         indices.append(
             np.pad(
-                grouped_items[i] if max_len > length else grouped_items[i][:max_len],
-                pad_width=(0, max_len - min(max_len, length)),
+                grouped_items[i],
+                pad_width=(0, max_len - length),
                 mode="constant",
                 constant_values=0,
             )
