@@ -27,7 +27,7 @@ def main():
     # ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
     save_dir = Path("embeddings")
     # save_dir = Path("/content/drive/MyDrive/embeddings")
-    exp_name = "e5_embed_final_attention"
+    exp_name = "nvidia_query_final_attention"
 
     rng = np.random.default_rng(1234)
     train_behaviors, train_news_text_dict = load_dataset(
@@ -92,7 +92,7 @@ def main():
     # )
 
     train_pipeline = Pipeline(
-        "gte_large_small",
+        "nvidia_query_small",
         [
             ("init_transform", transform_component),
             ("load_embedding", load_component),

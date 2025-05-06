@@ -394,7 +394,7 @@ class AttentionComponent(PipelineComponent):
                 new_context_dict["classification_preds"],
                 new_context_dict["history_bool"],
                 self.attention_model,
-                # query_news_embeddings=new_context_dict.get("query_news_embeddings"),
+                query_news_embeddings=new_context_dict.get("query_news_embeddings"),
             )
         )
         return new_context_dict
@@ -438,8 +438,8 @@ class AttentionComponent(PipelineComponent):
             max_neg_ratio=self.max_neg_ratio,
             max_pos_ratio=self.max_pos_ratio,
             rng=self.rng,
-            # train_query_news_embeddings=context_dict.get("query_news_embeddings"),
-            # val_query_news_embeddings=val_context_dict.get("query_news_embeddings"),
+            train_query_news_embeddings=context_dict.get("query_news_embeddings"),
+            val_query_news_embeddings=val_context_dict.get("query_news_embeddings"),
         )
         attention_weight_trainer.train(self.num_epochs)
         if self.ckpt_dir:

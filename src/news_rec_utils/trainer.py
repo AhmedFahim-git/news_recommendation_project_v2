@@ -436,8 +436,8 @@ class AttentionTrainer:
         max_neg_ratio: Optional[float] = None,
         max_pos_ratio: Optional[float] = None,
         rng: np.random.Generator = np.random.default_rng(1234),
-        # train_query_news_embeddings: Optional[torch.Tensor] = None,
-        # val_query_news_embeddings: Optional[torch.Tensor] = None,
+        train_query_news_embeddings: Optional[torch.Tensor] = None,
+        val_query_news_embeddings: Optional[torch.Tensor] = None,
     ):
         self.rng = rng
         self.log_dir = log_dir
@@ -447,7 +447,7 @@ class AttentionTrainer:
 
         self.optimizer = AdamW(
             self.attention_model.parameters(),
-            lr=1e-6,
+            lr=1e-5,
         )
 
         self.loss_fn = torch.nn.MarginRankingLoss(2)
@@ -468,10 +468,10 @@ class AttentionTrainer:
             rng=self.rng,
         )
         self.train_news_embeddings = train_news_embeddings
-        # if isinstance(train_query_news_embeddings, torch.Tensor):
-        #     self.train_query_news_embeddings = train_query_news_embeddings
-        # else:
-        #     self.train_query_news_embeddings = train_news_embeddings
+        if isinstance(train_query_news_embeddings, torch.Tensor):
+            self.train_query_news_embeddings = train_query_news_embeddings
+        else:
+            self.train_query_news_embeddings = train_news_embeddings
 
         self.train_eval_score_func = partial(
             get_cos_sim_scores,
@@ -481,15 +481,15 @@ class AttentionTrainer:
             impression_len_list=train_impression_len_list,
             news_embeddings=train_news_embeddings,
             model=self.attention_model,
-            # query_news_embeddings=self.train_query_news_embeddings,
+            query_news_embeddings=self.train_query_news_embeddings,
         )
         self.train_labels = train_labels
         self.train_impression_len_list = train_impression_len_list
 
-        # if isinstance(val_query_news_embeddings, torch.Tensor):
-        #     self.val_query_news_embeddings = val_query_news_embeddings
-        # else:
-        #     self.val_query_news_embeddings = val_news_embeddings
+        if isinstance(val_query_news_embeddings, torch.Tensor):
+            self.val_query_news_embeddings = val_query_news_embeddings
+        else:
+            self.val_query_news_embeddings = val_news_embeddings
 
         self.val_eval_score_func = partial(
             get_cos_sim_scores,
@@ -499,7 +499,7 @@ class AttentionTrainer:
             impression_len_list=val_impression_len_list,
             news_embeddings=val_news_embeddings,
             model=self.attention_model,
-            # query_news_embeddings=self.val_query_news_embeddings,
+            query_news_embeddings=self.val_query_news_embeddings,
         )
         self.val_labels = val_labels
         self.val_impression_len_list = val_impression_len_list
@@ -539,7 +539,7 @@ class AttentionTrainer:
             news_ind_pos_neg,
         ) in tqdm(self.train_dataloader):
             self.optimizer.zero_grad()
-            model_input = self.train_news_embeddings[
+            model_input = self.train_query_news_embeddings[
                 history_indices
             ] * history_attention_mask.unsqueeze(-1)
             outputs = self.attention_model(
@@ -918,7 +918,7 @@ class AttentionAttentionTrainer:
             batch_size=self.train_batch_size,
             max_neg_raio=max_neg_ratio,
             max_pos_ratio=max_pos_ratio,
-            history_maxlen=IMPRESSION_MAXLEN,
+            # history_maxlen=IMPRESSION_MAXLEN,
             rng=self.rng,
         )
 
