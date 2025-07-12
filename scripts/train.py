@@ -23,12 +23,12 @@ def main():
     exp_name = "ranking_loss_new_attn_individual_no_weight"
 
     rng = np.random.default_rng(1234)
-    train_behaviors, train_news_text_dict = load_dataset(
+    train_behaviors, train_news_feat_dict = load_dataset(
         data_dir,
         NewsDataset.MINDsmall_train,
         random_state=rng,
     )
-    val_behaviors, val_news_text_dict = load_dataset(
+    val_behaviors, val_news_feat_dict = load_dataset(
         data_dir,
         NewsDataset.MINDsmall_dev,
         random_state=rng,
@@ -93,11 +93,11 @@ def main():
     context_dict, val_context_dict = train_pipeline.train(
         context_dict={
             "behaviors": train_behaviors,
-            "news_text_dict": train_news_text_dict,
+            **train_news_feat_dict,
         },
         val_context_dict={
             "behaviors": val_behaviors,
-            "news_text_dict": val_news_text_dict,
+            **val_news_feat_dict,
         },
     )
 

@@ -12,7 +12,7 @@ from news_rec_utils.components import (
     AttentionComponent,
     SaveEmbeddingComponent,
     LoadEmbeddingComponent,
-    NewAttentionReduceComponent,
+    AttentionReduceComponent,
     StoreEmbeddingsComponent,
     AttentionAttentionComponent,
     TokenEmbeddingsComponent,
@@ -36,6 +36,7 @@ def main():
     # db_name = "/content/drive/MyDrive/my_db/mydb_dev.sqlite"
 
     rng = np.random.default_rng(1234)
+    # To Fix. We no longer get news text dict directly from load_dataset
     train_behaviors, train_news_text_dict = load_dataset(
         data_dir,
         NewsDataset.MINDsmall_train,

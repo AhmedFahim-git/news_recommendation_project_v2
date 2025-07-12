@@ -26,10 +26,10 @@ def main():
     exp_name = "ranking_loss_attn"
 
     rng = np.random.default_rng(1234)
-    train_behaviors, train_news_text_dict = load_dataset(
+    train_behaviors, train_news_feat_dict = load_dataset(
         data_dir, NewsDataset.MINDsmall_train, random_state=rng
     )
-    val_behaviors, val_news_text_dict = load_dataset(
+    val_behaviors, val_news_feat_dict = load_dataset(
         data_dir, NewsDataset.MINDsmall_dev, random_state=rng
     )
 
@@ -40,7 +40,7 @@ def main():
     load_component = LoadEmbeddingComponent(save_dir)
 
     save_pipeline = Pipeline(
-        "gte_large_small",
+        "e5_title_abstract_pipeline",
         [
             ("init_transform", transform_component),
             ("model_embed", embedding_component),
@@ -52,7 +52,7 @@ def main():
     )
 
     load_pipeline = Pipeline(
-        "gte_large_small",
+        "gte_large_small_je",
         [("init_transform", transform_component), ("load_embedding", load_component)],
     )
 
@@ -60,24 +60,24 @@ def main():
         context_dict={
             "news_dataset": NewsDataset.MINDsmall_train,
             "behaviors": train_behaviors,
-            "news_text_dict": train_news_text_dict,
+            **train_news_feat_dict,
         },
         val_context_dict={
             "news_dataset": NewsDataset.MINDsmall_dev,
             "behaviors": val_behaviors,
-            "news_text_dict": val_news_text_dict,
+            **val_news_feat_dict,
         },
     )
     context_dict, val_context_dict = load_pipeline.transform(
         context_dict={
             "news_dataset": NewsDataset.MINDsmall_train,
             "behaviors": train_behaviors,
-            "news_text_dict": train_news_text_dict,
+            **train_news_feat_dict,
         },
         val_context_dict={
             "news_dataset": NewsDataset.MINDsmall_dev,
             "behaviors": val_behaviors,
-            "news_text_dict": val_news_text_dict,
+            **val_news_feat_dict,
         },
     )
 

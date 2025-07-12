@@ -11,7 +11,7 @@ from news_rec_utils.components import (
     NewAttentionComponent,
     AttentionComponent,
     LoadEmbeddingComponent,
-    NewAttentionReduceComponent,
+    AttentionReduceComponent,
 )
 from news_rec_utils.config import MODEL_PATH, NewsDataset
 from news_rec_utils.data_utils import load_dataset
@@ -27,13 +27,13 @@ def main():
     # ckpt_root_dir = Path("/content/drive/MyDrive/MIND_models_all")
     save_dir = Path("embeddings")
     # save_dir = Path("/content/drive/MyDrive/embeddings")
-    exp_name = "nvidia_query_final_attention"
+    exp_name = "e5_query_final_attention"
 
     rng = np.random.default_rng(1234)
-    train_behaviors, train_news_text_dict = load_dataset(
+    train_behaviors, train_news_feat_dict = load_dataset(
         data_dir, NewsDataset.MINDsmall_train, random_state=rng
     )
-    val_behaviors, val_news_text_dict = load_dataset(
+    val_behaviors, val_news_feat_dict = load_dataset(
         data_dir, NewsDataset.MINDsmall_dev, random_state=rng
     )
 
@@ -83,7 +83,7 @@ def main():
     #     num_epochs=5,
     #     rng=rng,
     # )
-    # new_reduce_attention = NewAttentionReduceComponent(
+    # new_reduce_attention = AttentionReduceComponent(
     #     log_dir=log_dir,
     #     ckpt_dir=ckpt_root_dir / "new_attention_model",
     #     reduce_ckpt_dir=ckpt_root_dir / "reducing_model",
@@ -92,7 +92,7 @@ def main():
     # )
 
     train_pipeline = Pipeline(
-        "nvidia_query_small",
+        "e5_title_train_pipeline",
         [
             ("init_transform", transform_component),
             ("load_embedding", load_component),
@@ -108,12 +108,12 @@ def main():
         context_dict={
             "news_dataset": NewsDataset.MINDsmall_train,
             "behaviors": train_behaviors,
-            "news_text_dict": train_news_text_dict,
+            **train_news_feat_dict,
         },
         val_context_dict={
             "news_dataset": NewsDataset.MINDsmall_dev,
             "behaviors": val_behaviors,
-            "news_text_dict": val_news_text_dict,
+            **val_news_feat_dict,
         },
     )
 

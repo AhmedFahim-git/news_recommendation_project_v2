@@ -17,6 +17,12 @@ mv ../MINDsmall_train/news_text.parquet data/processed/MINDsmall_train/
 mv ../MINDsmall_dev/behaviors.parquet data/processed/MINDsmall_dev/
 mv ../MINDsmall_dev/news_text.parquet data/processed/MINDsmall_dev/
 
+mv ../MINDsmall_dev/entity_embeds.pkl data/processed/MINDsmall_dev
+mv ../MINDsmall_train/entity_embeds.pkl data/processed/MINDsmall_train
+
+mv ../categories.json data/
+mv ../sub_categories.json data/
+
 mv ../embeddings ./
 
 # mkdir models

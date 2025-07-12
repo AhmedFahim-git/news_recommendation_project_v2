@@ -20,19 +20,19 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # MODEL_PATH = "Alibaba-NLP/gte-base-en-v1.5"
 # MODEL_PATH = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
-MODEL_PATH = "nvidia/NV-Embed-v2"
-# MODEL_PATH = "intfloat/multilingual-e5-large-instruct"
+# MODEL_PATH = "nvidia/NV-Embed-v2"
+MODEL_PATH = "intfloat/multilingual-e5-large-instruct"
 # MODEL_PATH = "Alibaba-NLP/gte-large-en-v1.5"
 
-NEWS_TEXT_MAXLEN = 1000  # Actually close to 600
+NEWS_TEXT_MAXLEN = 512  # Actually close to 600
 
-EMBEDDING_DIM = 4096
+EMBEDDING_DIM = 1024
 
-REDUCED_DIM = 768
+REDUCED_DIM = EMBEDDING_DIM
 
-IMPRESSION_MAXLEN = 1000  # Actually close to 600
+IMPRESSION_MAXLEN = 600  # Actually close to 600
 
-NUM_HIDDEN_LAYERS = 2
+NUM_HIDDEN_LAYERS = 1
 
 NEWS_CLASSIFICATION_PROMPT = "Please analyze the following news article to inform if the user would read the following news article.\nThe news article is: "
 

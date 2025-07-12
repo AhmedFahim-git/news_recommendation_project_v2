@@ -1,0 +1,20 @@
+{
+    "news": 0,
+    "sports": 1,
+    "finance": 2,
+    "travel": 3,
+    "foodanddrink": 4,
+    "lifestyle": 5,
+    "video": 6,
+    "weather": 7,
+    "health": 8,
+    "autos": 9,
+    "tv": 10,
+    "music": 11,
+    "entertainment": 12,
+    "movies": 13,
+    "kids": 14,
+    "middleeast": 14,
+    "games": 14,
+    "northamerica": 14
+}

@@ -22,6 +22,7 @@ from .config import (
     EMBEDDING_DIM,
     NUM_WORKERS,
     NEWS_TEXT_MAXLEN,
+    IMPRESSION_MAXLEN,
     QUERY_INSTRUCTION,
     TORCH_DTYPE,
     REDUCED_DIM,
@@ -112,13 +113,36 @@ class ClassificationHead(torch.nn.Module):
     def forward(self, embeddings):
         embeddings = F.relu(self.linear_1(embeddings))
         embeddings = F.relu(self.linear_2(embeddings))
-        return F.tanh(self.linear_3(embeddings))
+        return self.linear_3(embeddings)
+
+
+class ClassificationHeadCatEmbed(torch.nn.Module):
+    def __init__(self, in_dim: int, hidden_dim: int, out_dim: int):
+        super().__init__()
+        self.cat_embed = torch.nn.Embedding(15, 128)
+        self.linear_1 = torch.nn.Linear(in_features=in_dim, out_features=hidden_dim)
+        self.linear_2 = torch.nn.Linear(in_features=hidden_dim, out_features=hidden_dim)
+        self.linear_3 = torch.nn.Linear(in_features=hidden_dim, out_features=out_dim)
+
+    def forward(self, embeddings):
+        embeddings = self.add_embedding(embeddings)
+        embeddings = F.relu(self.linear_1(embeddings))
+        embeddings = F.relu(self.linear_2(embeddings))
+        return self.linear_3(embeddings)
+
+    def add_embedding(self, embeddings):
+        cat_embeds = self.cat_embed(embeddings[..., -1].to(dtype=torch.int32))
+        # subcat_embeds = self.subcat_embed(embeddings[..., -1].to(dtype=torch.int32))
+        return torch.cat([embeddings[..., :-1], cat_embeds], dim=-1)
 
 
 def get_classification_head(model_path: Optional[Path] = None):
     model = ClassificationHead(
         in_dim=EMBEDDING_DIM, hidden_dim=EMBEDDING_DIM, out_dim=1
     )
+    # model = ClassificationHeadCatEmbed(
+    #     in_dim=EMBEDDING_DIM, hidden_dim=EMBEDDING_DIM, out_dim=1
+    # )
     if model_path:
         model.load_state_dict(torch.load(model_path, weights_only=True))
     return model.to(DEVICE)
@@ -149,20 +173,58 @@ def get_weighted_sum_model(model_path: Optional[Path] = None):
 
 
 class FinalAttention(torch.nn.Module):
-    def __init__(self, embed_dim: int, hidden_dim: int):
+    def __init__(self, reduced_dim: int, hidden_dim: int):
         super().__init__()
-        self.linear1 = torch.nn.Linear(embed_dim, embed_dim)
-        self.linear2 = torch.nn.Linear(embed_dim, hidden_dim)
-        self.linear3 = torch.nn.Linear(hidden_dim, embed_dim, bias=False)
+
+        # self.alpha = torch.nn.Parameter(torch.tensor(99999.9))
+
+        # self.pos_emb_layer = torch.nn.Embedding(IMPRESSION_MAXLEN, 100)
+        # self.in_layer = torch.nn.Linear(EMBEDDING_DIM + 100, reduced_dim)
+
+        # self.in_layer = torch.nn.Linear(EMBEDDING_DIM, reduced_dim)
+        self.linear1 = torch.nn.Linear(reduced_dim, hidden_dim)
+        self.dropout1 = torch.nn.Dropout(0.1)
+        self.linear2 = torch.nn.Linear(hidden_dim, hidden_dim)
+        self.dropout2 = torch.nn.Dropout(0.1)
+        self.linear3 = torch.nn.Linear(hidden_dim, reduced_dim)
+        self.linear4 = torch.nn.Linear(reduced_dim, hidden_dim)
+        self.dropout3 = torch.nn.Dropout(0.1)
+        self.linear5 = torch.nn.Linear(hidden_dim, reduced_dim, bias=False)
+        # self.out_layer = torch.nn.Linear(reduced_dim, EMBEDDING_DIM)
 
     def forward(self, embeddings: torch.Tensor, attention_mask: torch.Tensor):
-        x = F.relu(self.linear1(embeddings))
-        weights = self.linear2(x)
-        weights = self.linear3(weights)
+        # embeddings = embeddings[:, :IMPRESSION_MAXLEN]
+        # attention_mask = attention_mask[:, :IMPRESSION_MAXLEN]
+
+        # pos_weight = (
+        #     torch.sigmoid(self.alpha)
+        #     .pow(torch.arange(embeddings.shape[1], device=DEVICE))
+        #     .unsqueeze(0)
+        #     .unsqueeze(-1)
+        # )
+        # embeddings = embeddings * pos_weight
+
+        # embeddings = torch.cat(
+        #     [
+        #         embeddings,
+        #         self.pos_emb_layer(torch.arange(embeddings.shape[1], device=DEVICE))
+        #         .unsqueeze(0)
+        #         .expand(embeddings.shape[0], -1, -1),
+        #     ],
+        #     dim=-1,
+        # )
+
+        # x = self.in_layer(embeddings)
+        x = self.dropout1(F.relu(self.linear1(embeddings)))
+        x = self.dropout2(F.relu(self.linear2(x)))
+        x = self.linear3(x)
+        weights = self.dropout3(F.relu(self.linear4(x)))
+        weights = self.linear5(weights)
         # weights = weights.squeeze(2)
         weights = torch.exp(weights) * attention_mask.unsqueeze(-1)
         weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-10)
         # weights = weights.unsqueeze(-1)
+        # return self.out_layer((x * weights).sum(dim=1))
         return (x * weights).sum(dim=1)
 
 
@@ -210,7 +272,7 @@ class FinalAttention(torch.nn.Module):
 
 
 def get_final_attention_model(model_path: Optional[Path] = None):
-    model = FinalAttention(embed_dim=EMBEDDING_DIM, hidden_dim=EMBEDDING_DIM)
+    model = FinalAttention(reduced_dim=REDUCED_DIM, hidden_dim=4096)
     if model_path:
         model.load_state_dict(torch.load(model_path, weights_only=True))
         # model = torch.load(model_path, weights_only=False)
@@ -245,7 +307,9 @@ def get_embed_from_model(
     text_maxlen: int,
     text_collate_fn: Callable[[Iterable[str]], BatchEncoding],
 ):
-    text_batch_size = get_text_inference_batch_size(model, text_maxlen) - 300
+    text_batch_size = int(
+        get_text_inference_batch_size(model, text_maxlen) * 0.5
+    )  # - 300
     print(f"Batch size for text of {text_maxlen}: {text_batch_size}")
     text_dataloader = DataLoader(
         text_dataset,
@@ -257,6 +321,51 @@ def get_embed_from_model(
     )
     model.eval()
     return get_text_embed_eval(model, text_dataloader)
+
+
+class EmbeddingWrapper(torch.nn.Module):
+    def __init__(self, wrapped_model: torch.nn.Module):
+        super().__init__()
+        self.cat_embed = torch.nn.Embedding(15, 128)
+        self.subcat_embed = torch.nn.Embedding(134, 128)
+        self.wrapped_model = wrapped_model
+
+    def forward(self, embeddings, *args, **kwargs):
+        combined = self.add_embedding(embeddings)
+        return self.wrapped_model(combined.to(dtype=torch.float32), *args, **kwargs)
+
+    def add_embedding(self, embeddings):
+        cat_embeds = self.cat_embed(embeddings[..., -2].to(dtype=torch.int32))
+        subcat_embeds = self.subcat_embed(embeddings[..., -1].to(dtype=torch.int32))
+        return torch.cat([embeddings[..., :-2], cat_embeds, subcat_embeds], dim=-1)
+
+
+def get_embed_wrapped_model(wrap_model: torch.nn.Module):
+    embed_wrapped_model = EmbeddingWrapper(wrap_model)
+    embed_wrapped_model = embed_wrapped_model.to(device=DEVICE)
+    return embed_wrapped_model
+
+
+class ResizeWrapperModel(torch.nn.Module):
+    def __init__(
+        self,
+        wrapped_model: torch.nn.Module,
+        embed_dim=EMBEDDING_DIM,
+        reduced_dim=REDUCED_DIM,
+    ):
+        super().__init__()
+        self.bottleneck_in = torch.nn.Linear(embed_dim, reduced_dim)
+        self.wrapped_model = wrapped_model
+        self.bottleneck_out = torch.nn.Linear(reduced_dim, embed_dim)
+
+    def forward(self, embeddings, *args, **kwargs):
+        bottle_in = self.bottleneck_in(embeddings)
+        wrap_out = self.wrapped_model(bottle_in, *args, **kwargs)
+        return self.bottleneck_out(wrap_out)
+
+
+def resize_wrap_model(wrap_model: torch.nn.Module):
+    return ResizeWrapperModel(wrap_model).to(device=DEVICE)
 
 
 def get_nv_embeds(model, texts: list[str], type: str):

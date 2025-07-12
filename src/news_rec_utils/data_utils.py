@@ -1,10 +1,12 @@
 from pathlib import Path
 from typing import Optional
 import argparse
+import json
 from typing import Any, Callable
 from collections.abc import Sequence, Iterable
 from abc import ABC, abstractmethod
 import sqlite3
+import joblib
 from contextlib import closing
 import io
 import pandas as pd
@@ -32,13 +34,69 @@ def load_dataset(
         data_dir / "processed" / news_dataset.value / "behaviors.parquet",
         columns=["ImpressionID", "History", "Impressions"],
     )
-    news_text_dict: dict[str, str] = (
-        pd.read_parquet(
-            data_dir / "processed" / news_dataset.value / "news_text.parquet"
-        )
-        .set_index("NewsID")["news_text"]
-        .to_dict()
+    news_text = pd.read_parquet(
+        data_dir / "processed" / news_dataset.value / "news_text.parquet"
+    ).set_index("NewsID")
+    entity_embeds = joblib.load(
+        data_dir / "processed" / news_dataset.value / "entity_embeds.pkl"
     )
+    with open(data_dir / "categories.json") as f:
+        cat_dict = json.load(f)
+    with open(data_dir / "sub_categories.json") as f:
+        sub_cat_dict = json.load(f)
+
+    # for i in news_text["Title Entities"]:
+    #     if pd.notnull(i):
+    #         sup = json.loads(i)
+    #         for abcde in sup:
+    #             if "WikidataId" not in abcde:
+    #                 print(i)
+    #                 return
+    # print(news_dataset)
+    def get_entity_embeds(x):
+        if pd.isnull(x):
+            return [[0] * 100]
+        embeds = [
+            entity_embeds[i["WikidataId"]]
+            for i in json.loads(x)
+            if i["WikidataId"] in entity_embeds
+        ]
+        if len(embeds) > 0:
+            return embeds
+        else:
+            return [[0] * 100]
+
+    news_text["title_entities"] = news_text["Title Entities"].apply(get_entity_embeds)
+    # lambda x: (
+    #     [entity_embeds.get(i["WikidataId"], [0] * 100) for i in json.loads(x)]
+    #     if pd.notnull(x)
+    #     else [[0] * 100]
+    # )
+    # )
+    news_text["abstract_entities"] = news_text["Abstract Entities"].apply(
+        get_entity_embeds
+    )
+    #     lambda x: (
+    #         [entity_embeds.get(i["WikidataId"], [0] * 100) for i in json.loads(x)]
+    #         if pd.notnull(x)
+    #         else [[0] * 100]
+    #     )
+    # )
+
+    news_text_dict: dict[str, str] = news_text["news_text"].to_dict()
+    news_title_dict: dict[str, str] = news_text["Title"].to_dict()
+    news_abstract_dict: dict[str, str] = news_text["Abstract"].dropna().to_dict()
+    news_category_dict: dict[str, int] = news_text["Category"].map(cat_dict).to_dict()
+    news_subcategory_dict: dict[str, int] = (
+        news_text["SubCategory"].map(sub_cat_dict).to_dict()
+    )
+    news_title_entity_embed_dict: dict[str, np.ndarray] = {
+        k: np.mean(v, axis=0) for k, v in news_text["title_entities"].to_dict().items()
+    }
+    news_abstract_entity_embed_dict: dict[str, np.ndarray] = {
+        k: np.mean(v, axis=0)
+        for k, v in news_text["abstract_entities"].to_dict().items()
+    }
     if data_subset == DataSubset.WITH_HISTORY:
         behaviors = behaviors[behaviors["History"].notna()].reset_index(drop=True)
     elif data_subset == DataSubset.WITHOUT_HISTORY:
@@ -48,14 +106,26 @@ def load_dataset(
             n=num_samples, random_state=random_state, replace=False
         ).reset_index(drop=True)
         # behaviors = behaviors.iloc[:num_samples]
+    news_title_dict = {k: "News Title: " + v for k, v in news_title_dict.items()}
+    news_abstract_dict = {
+        k: "News Abstract: " + v for k, v in news_abstract_dict.items()
+    }
 
-    return behaviors, news_text_dict
+    return behaviors, {
+        "news_text_dict": news_text_dict,
+        "news_title_dict": news_title_dict,
+        "news_abstract_dict": news_abstract_dict,
+        "news_category": news_category_dict,
+        "news_subcategory": news_subcategory_dict,
+        "news_title_entity": news_title_entity_embed_dict,
+        "news_abstract_entity": news_abstract_entity_embed_dict,
+    }
 
 
 def read_data(
     data_dir: Path,
     news_dataset: NewsDataset,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, list[float]]]:
     print("Reading behaviors.tsv data")
     behaviors = pd.read_csv(
         data_dir / "raw" / news_dataset.value / "behaviors.tsv",
@@ -81,8 +151,18 @@ def read_data(
             "Abstract Entities",
         ],
     )
+    print("Reading entity embedding.vec")
+    entity_embeds = pd.read_csv(
+        data_dir / "raw" / news_dataset.value / "entity_embedding.vec",
+        sep="\t",
+        header=None,
+    )
 
-    return behaviors, news
+    return (
+        behaviors,
+        news,
+        entity_embeds.drop(columns=[101]).set_index(0).T.to_dict("list"),
+    )
 
 
 def split_impressions_and_history(
@@ -192,6 +272,68 @@ def split_impressions(impressions: Sequence[str]):
     )
 
 
+def split_impressions_pos_neg_infonce(
+    rng: np.random.Generator,
+    grouped_news_rev_index: np.ndarray,
+    labels: np.ndarray,
+    num_neg_per_pos: int = 5,
+):
+    pos_ind, neg_ind, len_list = [], [], []
+    # print("In split imp. num neg per pos: ", num_neg_per_pos)
+    neg_ind_list = [[] for _ in range(num_neg_per_pos)]
+    for i, row in enumerate(labels):
+        temp_pos, temp_neg = [], []
+        num_pos = sum(row)
+        num_neg = len(row) - num_pos
+        for j, label in enumerate(row):
+            news_rev_ind = grouped_news_rev_index[i][j]
+            if label == 0:
+                temp_neg.append(news_rev_ind)
+            else:
+                temp_pos.append(news_rev_ind)
+        neg_list = []
+        for item in temp_pos:
+            if num_neg >= num_neg_per_pos:
+                neg_list.extend(
+                    rng.choice(temp_neg, size=num_neg_per_pos, replace=False).tolist()
+                )
+            else:
+                neg_list.extend(temp_neg + [-1] * (num_neg_per_pos - num_neg))
+
+        # if num_neg >= max_len:
+        #     temp_neg = rng.choice(temp_neg, size=max_len, replace=False)
+        #     temp_pos = rng.permutation(
+        #         np.append(temp_pos, rng.choice(temp_pos, max_len - num_pos))
+        #     )
+        # else:
+        #     temp_pos = rng.choice(temp_pos, size=max_len, replace=False)
+        #     temp_neg = rng.permutation(
+        #         np.append(temp_neg, rng.choice(temp_neg, max_len - num_neg))
+        #     )
+        # else:
+        #     temp_pos = rng.permutation(
+        #         np.append(temp_pos, rng.choice(temp_pos, max_len - num_pos))
+        #     )
+        #     temp_neg = rng.permutation(
+        #         np.append(temp_neg, rng.choice(temp_neg, max_len - num_neg))
+        #     )
+
+        pos_ind.extend(temp_pos)
+        for j in range(num_neg_per_pos):
+            neg_ind_list[j].extend(neg_list[j::num_neg_per_pos])
+        # neg_ind.extend(temp_neg)
+        len_list.append(num_pos)
+    neg_ind_array = [np.array(item, dtype=np.int32) for item in neg_ind_list]
+    return np.stack(
+        [
+            np.array(pos_ind, dtype=np.int32),
+            # np.array(neg_ind, dtype=np.int32),
+            *neg_ind_array,
+            np.concatenate([[i] * n for i, n in enumerate(len_list)], dtype=np.int32),
+        ]
+    )
+
+
 def split_impressions_pos_neg(
     rng: np.random.Generator,
     grouped_news_rev_index: np.ndarray,
@@ -276,26 +418,29 @@ def rank_group_preds(pred_scores: np.ndarray, imp_counts: np.ndarray):
 def get_data(
     data_dir: Path,
     news_dataset: NewsDataset,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    behaviors, news = read_data(data_dir, news_dataset)
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, list[float]]]:
+    behaviors, news, entity_embeds = read_data(data_dir, news_dataset)
 
     print("Getting list of target impressions for final filtering of news dataset")
 
     news = process_news(news)
-    return behaviors, news
+    return behaviors, news, entity_embeds
 
 
 def process_news(news_df: pd.DataFrame) -> pd.DataFrame:
     print("Making news_text column for the news data")
     news_df["news_text"] = news_df.apply(
-        lambda x: f"Title: {x['Title']}\nCategory: {x['Category']}\nSubCategory: {x['SubCategory']}\nAbstract: {x['Abstract']}",
+        # lambda x: f"Title: {x['Title']}\nCategory: {x['Category']}\nSubCategory: {x['SubCategory']}\nAbstract: {x['Abstract']}",
+        # lambda x: f"Title: {x['Title']}\nCategory: {x['Category']}\nSubCategory: {x['SubCategory']}",
+        # lambda x: f"Title: {x['Title']}\nAbstract: {x['Abstract']}",
+        lambda x: f"Title: {x['Title']}",
         axis=1,
     )
     return news_df
 
 
 def store_processed_data(data_dir: Path, news_dataset: NewsDataset) -> None:
-    behaviors, news_text = get_data(data_dir, news_dataset)
+    behaviors, news_text, entity_embeds = get_data(data_dir, news_dataset)
 
     print("Saving datasets")
     (data_dir / "processed" / news_dataset.value).mkdir(parents=True, exist_ok=True)
@@ -304,6 +449,9 @@ def store_processed_data(data_dir: Path, news_dataset: NewsDataset) -> None:
     )
     news_text.to_parquet(
         data_dir / "processed" / news_dataset.value / "news_text.parquet"
+    )
+    joblib.dump(
+        entity_embeds, data_dir / "processed" / news_dataset.value / "entity_embeds.pkl"
     )
 
 
@@ -359,6 +507,75 @@ class FinalAttentionEvalDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.group_history[idx]
+
+
+class FinalAttentionTrainInfoNCEDataset(Dataset):
+    def __init__(
+        self,
+        history_rev_index: np.ndarray,
+        history_len_list: np.ndarray,
+        news_rev_index: np.ndarray,
+        impression_len_list: np.ndarray,
+        labels: np.ndarray,
+        batch_size: int,
+        num_neg_per_pos: int = 5,
+        # max_neg_raio: Optional[float] = None,
+        # max_pos_ratio: Optional[float] = None,
+        # history_maxlen: Optional[int] = None,
+        rng=np.random.default_rng(1234),
+    ):
+        assert len(history_len_list) == len(
+            impression_len_list
+        ), "Number of rows should match between history and news"
+        assert sum(impression_len_list) == len(
+            news_rev_index
+        ), "Number of impressions should match length of impression list"
+        self.group_history = group_items(history_rev_index, history_len_list)
+        self.batch_size = batch_size
+        self.labels = labels
+        self.news_rev_index = news_rev_index
+        self.impression_len_list = impression_len_list
+        self.rng = rng
+        self.num_neg_per_pos = num_neg_per_pos
+        # self.max_neg_ratio = max_neg_raio
+        # self.max_pos_ratio = max_pos_ratio
+        # self.history_maxlen = history_maxlen
+        self.reset()
+
+    def __len__(self):
+        return len(self.pos_neg_indices)
+
+    def __getitem__(self, idx):
+        return (
+            self.group_history[self.pos_neg_indices[idx, -1]],
+            self.pos_neg_indices[idx, :-1],
+        )
+
+    def reset(self):
+        permuted_index = self.rng.permutation(len(self.labels))
+        pos_neg_indices = split_impressions_pos_neg_infonce(
+            rng=self.rng,
+            grouped_news_rev_index=group_items(
+                self.news_rev_index, self.impression_len_list
+            )[permuted_index],
+            labels=self.labels[permuted_index],
+            num_neg_per_pos=self.num_neg_per_pos,
+            # max_neg_ratio=self.max_neg_ratio,
+            # max_pos_ratio=self.max_pos_ratio,
+        )
+        pos_neg_indices[-1] = permuted_index[pos_neg_indices[-1]]
+        num_batches = -(pos_neg_indices.shape[1] // -self.batch_size)
+        permuted_list = self.rng.permutation(num_batches - 1).tolist() + [
+            num_batches - 1
+        ]
+        final_index = np.concatenate(
+            [
+                np.arange(i * self.batch_size, (i + 1) * self.batch_size)
+                for i in permuted_list
+            ]
+        )[: pos_neg_indices.shape[1]]
+        pos_neg_indices = pos_neg_indices[:, final_index]
+        self.pos_neg_indices = pos_neg_indices.T
 
 
 class FinalAttentionTrainDataset(Dataset):
@@ -426,6 +643,46 @@ class FinalAttentionTrainDataset(Dataset):
         )[: pos_neg_indices.shape[1]]
         pos_neg_indices = pos_neg_indices[:, final_index]
         self.pos_neg_indices = pos_neg_indices.T
+
+
+class ClassificationTrainInfoNCEDataset(Dataset):
+    def __init__(
+        self,
+        news_embeds: torch.Tensor,
+        news_rev_index: np.ndarray,
+        imp_counts: np.ndarray,
+        labels: np.ndarray,
+        rng: np.random.Generator,
+        num_neg_per_pos: int = 5,
+    ):
+        assert len(news_embeds) > 0, "We need the news embeddings for this dataset"
+        self.news_embeds = news_embeds
+        self.news_rev_index = news_rev_index
+        self.imp_counts = imp_counts
+        self.labels = labels
+        self.rng = rng
+        self.num_neg_per_pos = num_neg_per_pos
+        self.reset()
+
+    def __len__(self):
+        return len(self.pos_neg_indices)
+
+    def __getitem__(self, idx):
+        return (self.news_embeds[self.pos_neg_indices[idx]], self.pos_neg_indices[idx])
+        # return (
+        #     self.news_embeds[self.pos_neg_indices[idx, 0]],
+        #     self.news_embeds[self.pos_neg_indices[idx, 1]],
+        # )
+
+    def reset(self):
+        # print("In trainer dataset class. num neg per pos: ", self.num_neg_per_pos)
+        pos_neg_indices = split_impressions_pos_neg_infonce(
+            rng=self.rng,
+            grouped_news_rev_index=group_items(self.news_rev_index, self.imp_counts),
+            labels=self.labels,
+            num_neg_per_pos=self.num_neg_per_pos,
+        )
+        self.pos_neg_indices = pos_neg_indices[:-1].T
 
 
 class ClassificationTrainDataset(Dataset):
@@ -531,6 +788,32 @@ def final_attention_eval_collate_fn(input, news_embeddings: torch.Tensor):
     return (
         news_embeddings[indices] * attention_mask.unsqueeze(-1),
         attention_mask,
+    )
+
+
+def final_attention_train_infonce_collate_fn(input):
+    grouped_history, news_ind_pos_neg = zip(*input)
+    # print(type(grouped_history), type(grouped_history[0]))
+    grouped_history_unique, grouped_history_rev_index = np.unique(
+        [",".join(x.astype(str)) for x in grouped_history], return_inverse=True
+    )
+    grouped_history_unique = [
+        [int(i) for i in x.split(",")] for x in grouped_history_unique
+    ]
+    # grouped_history_unique, grouped_history_rev_index = np.unique(
+    #     np.array(list(map(list, grouped_history)), dtype=object),
+    #     return_inverse=True,
+    # )
+    # if not hasattr(grouped_history_unique[0], "__len__"):
+    #     grouped_history_unique = np.expand_dims(
+    #         np.array(grouped_history_unique, dtype=np.int32), 0
+    #     )
+    padded_mask_history = pad_to_maxlen(grouped_history_unique)
+    return (
+        torch.tensor(padded_mask_history["indices"], dtype=torch.int32),
+        torch.tensor(padded_mask_history["attention_mask"], dtype=torch.int32),
+        torch.tensor(grouped_history_rev_index, dtype=torch.int32),
+        torch.tensor(np.array(news_ind_pos_neg), dtype=torch.int32),
     )
 
 

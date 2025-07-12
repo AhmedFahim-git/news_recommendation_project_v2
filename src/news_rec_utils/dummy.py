@@ -26,7 +26,10 @@ def dummy_text_inputs_outputs(
 
 
 def dummy_classificaion_inputs_outputs(
-    batch_size: int, embedding_dim: int = EMBEDDING_DIM, device=DEVICE
+    batch_size: int,
+    # embedding_dim: int = EMBEDDING_DIM - 128 + 1,
+    embedding_dim: int = EMBEDDING_DIM,
+    device=DEVICE,
 ):
     return {
         "inputs": {"embeddings": torch.rand((batch_size, embedding_dim)).to(device)},
@@ -37,6 +40,7 @@ def dummy_classificaion_inputs_outputs(
 def dummy_attention_inputs_outputs(
     batch_size: int,
     max_len: int = IMPRESSION_MAXLEN,
+    # embedding_dim: int = EMBEDDING_DIM - 128 + 1,
     embedding_dim: int = EMBEDDING_DIM,
     device=DEVICE,
 ):

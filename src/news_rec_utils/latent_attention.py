@@ -1,5 +1,6 @@
 import torch
 from einops import repeat, rearrange
+from .config import REDUCED_DIM, EMBEDDING_DIM
 
 
 class PreNorm(torch.nn.Module):
@@ -78,10 +79,29 @@ class LatentAttentionModel(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.in_layer = torch.nn.Linear(4096, 512)
+
+        # self.alpha = torch.nn.Parameter(torch.tensor(99999.9))
+
+        # self.pos_emb_layer = torch.nn.Embedding(IMPRESSION_MAXLEN, 100)
+        # self.in_layer = torch.nn.Linear(EMBEDDING_DIM + 100, reduced_dim)
+
+        # self.in_layer = torch.nn.Linear(EMBEDDING_DIM, REDUCED_DIM)
         ## cross-attention block
         # num_latents, latent_dim, cross_heads, cross_dim_head = 512, 4096, 8, 4096
-        num_latents, latent_dim, cross_heads, cross_dim_head = 32, 512, 2, 64
+        if EMBEDDING_DIM == 4096:
+            num_latents, latent_dim, cross_heads, cross_dim_head = (
+                32,
+                REDUCED_DIM,
+                2,
+                32,
+            )
+        else:
+            num_latents, latent_dim, cross_heads, cross_dim_head = (
+                64,
+                REDUCED_DIM,
+                8,
+                512,
+            )
         # num_latents, latent_dim, cross_heads, cross_dim_head = (
         #     config.num_latents_value,
         #     config.latent_dim,
@@ -90,7 +110,7 @@ class LatentAttentionModel(torch.nn.Module):
         # )
         # dim = config.hidden_dim
         # dim = 4096
-        dim = 512
+        dim = REDUCED_DIM
         # init latent_attention and latents
         self.cross_attend_blocks = torch.nn.ModuleList(
             [
@@ -109,18 +129,39 @@ class LatentAttentionModel(torch.nn.Module):
         self.register_parameter(
             "latents", torch.nn.Parameter(torch.randn(num_latents, latent_dim))
         )
-        self.out_layer = torch.nn.Linear(512, 4096)
+        # self.out_layer = torch.nn.Linear(REDUCED_DIM, EMBEDDING_DIM)
 
     def forward(self, embeddings, attention_mask: torch.Tensor = None):
+        # embeddings = embeddings[:, :IMPRESSION_MAXLEN]
+        # attention_mask = attention_mask[:, :IMPRESSION_MAXLEN]
+
+        # pos_weight = (
+        #     torch.sigmoid(self.alpha)
+        #     .pow(torch.arange(embeddings.shape[1], device=DEVICE))
+        #     .unsqueeze(0)
+        #     .unsqueeze(-1)
+        # )
+        # embeddings = embeddings * pos_weight
+
+        # embeddings = torch.cat(
+        #     [
+        #         embeddings,
+        #         self.pos_emb_layer(torch.arange(embeddings.shape[1], device=DEVICE))
+        #         .unsqueeze(0)
+        #         .expand(embeddings.shape[0], -1, -1),
+        #     ],
+        #     dim=-1,
+        # )
+
         ## cross-attention block
         hiddens = embeddings
         cross_attn, cross_ff = self.cross_attend_blocks
         b, *_, device = *hiddens.shape, hiddens.device
-        hiddens = self.in_layer(hiddens)
+        # hiddens = self.in_layer(hiddens)
         x = repeat(self.latents, "n d -> b n d", b=b)
         hiddens = cross_attn(hiddens, context=x, mask=None) + hiddens
         hiddens = cross_ff(hiddens) + hiddens
-        hiddens = self.out_layer(hiddens)
+        # hiddens = self.out_layer(hiddens)
         if attention_mask != None:
             s = torch.sum(hiddens * attention_mask.unsqueeze(-1).float(), dim=1)
             d = attention_mask.sum(dim=1, keepdim=True).float()

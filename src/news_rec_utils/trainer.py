@@ -19,9 +19,12 @@ from azure.storage.blob import ContainerClient, BlobClient
 from .config import DEVICE, NUM_WORKERS, IMPRESSION_MAXLEN
 from .data_utils import (
     ClassificationTrainDataset,
+    ClassificationTrainInfoNCEDataset,
     rank_group_preds,
     FinalAttentionTrainDataset,
+    FinalAttentionTrainInfoNCEDataset,
     final_attention_train_collate_fn,
+    final_attention_train_infonce_collate_fn,
     attention_attention_train_collate_fn,
 )
 from .batch_size_finder import (
@@ -44,7 +47,7 @@ load_dotenv()
 class ClassificationModelTrainer:
     def __init__(
         self,
-        model: ClassificationHead,
+        model: torch.nn.Module,
         train_embeddings: torch.Tensor,
         train_rev_index: np.ndarray,
         train_impression_len_list: np.ndarray,
@@ -56,6 +59,7 @@ class ClassificationModelTrainer:
         log_dir: Optional[Path] = None,
         ckpt_dir: Optional[Path] = None,
         exp_name: str = "",
+        num_neg_per_pos: int = 5,
         rng: np.random.Generator = np.random.default_rng(1234),
     ):
         self.ckpt_dir = ckpt_dir
@@ -69,6 +73,14 @@ class ClassificationModelTrainer:
             train_labels,
             self.rng,
         )
+        # self.train_dataset = ClassificationTrainInfoNCEDataset(
+        #     train_embeddings,
+        #     train_rev_index,
+        #     train_impression_len_list,
+        #     train_labels,
+        #     num_neg_per_pos=num_neg_per_pos,
+        #     rng=self.rng,
+        # )
         self.train_embeddings = train_embeddings
         self.train_rev_index = train_rev_index
         self.train_impression_len_list = train_impression_len_list
@@ -83,7 +95,7 @@ class ClassificationModelTrainer:
         self.optimizer = AdamW(self.model.parameters(), lr=1e-5)
 
         self.train_batch_size = (
-            get_classification_train_batch_size(self.model, self.optimizer) // 2
+            get_classification_train_batch_size(self.model, self.optimizer) // 4
         )
 
         print(
@@ -97,6 +109,7 @@ class ClassificationModelTrainer:
             num_workers=NUM_WORKERS,
         )
         self.loss_fn = torch.nn.MarginRankingLoss(2)
+        # self.loss_fn = torch.nn.CrossEntropyLoss()
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, patience=2
         )
@@ -104,6 +117,7 @@ class ClassificationModelTrainer:
     def train_one_epoch(self):
         self.model.train()
         losses, counts = [], []
+        # for pos_neg_embeds, pos_neg_ind in tqdm(self.train_dataloader):
         for pos_embeds, neg_embeds in tqdm(self.train_dataloader):
             self.optimizer.zero_grad()
             pos_res = self.model(pos_embeds.to(device=DEVICE)).squeeze()
@@ -111,11 +125,19 @@ class ClassificationModelTrainer:
             loss = self.loss_fn(
                 pos_res, neg_res, torch.tensor([1], dtype=torch.int32, device=DEVICE)
             )
+            # res = self.model(pos_neg_embeds.to(device=DEVICE)).squeeze()
+            # res[pos_neg_ind < 0] += torch.tensor(float("-inf"))
+            # loss = self.loss_fn(
+            #     res,
+            #     torch.zeros(len(pos_neg_embeds), device=DEVICE, dtype=torch.int64),
+            # )
+
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
             self.optimizer.step()
             losses.append(loss.item())
             counts.append(len(pos_embeds))
+            # counts.append(len(pos_neg_embeds))
         self.optimizer.zero_grad()
         train_epoch_loss = np.dot(losses, counts) / sum(counts)
         return train_epoch_loss
@@ -444,13 +466,18 @@ class AttentionTrainer:
         self.exp_name = exp_name
         self.ckpt_dir = ckpt_dir
         self.attention_model = attention_model
-
         self.optimizer = AdamW(
             self.attention_model.parameters(),
             lr=1e-5,
         )
 
+        # self.optimizer = AdamW(
+        #     self.attention_model.parameters(),
+        #     lr=1e-5,
+        # )
+
         self.loss_fn = torch.nn.MarginRankingLoss(2)
+        # self.loss_fn = torch.nn.CrossEntropyLoss()
         self.train_batch_size = get_attention_train_batch_size(
             self.attention_model, self.optimizer
         )
@@ -467,6 +494,16 @@ class AttentionTrainer:
             max_pos_ratio=max_pos_ratio,
             rng=self.rng,
         )
+        # self.train_dataset = FinalAttentionTrainInfoNCEDataset(
+        #     history_rev_index=train_history_rev_index,
+        #     history_len_list=train_history_len_list,
+        #     news_rev_index=train_news_rev_index,
+        #     impression_len_list=train_impression_len_list,
+        #     labels=train_labels,
+        #     batch_size=self.train_batch_size,
+        #     num_neg_per_pos=5,
+        #     rng=self.rng,
+        # )
         self.train_news_embeddings = train_news_embeddings
         if isinstance(train_query_news_embeddings, torch.Tensor):
             self.train_query_news_embeddings = train_query_news_embeddings
@@ -511,6 +548,7 @@ class AttentionTrainer:
             num_workers=NUM_WORKERS,
             shuffle=False,
             collate_fn=final_attention_train_collate_fn,
+            # collate_fn=final_attention_train_infonce_collate_fn,
         )
         # account_url = os.environ["ACCOUNT_URL"]
         # container_name = os.environ["CONTAINER_NAME"]
@@ -545,16 +583,46 @@ class AttentionTrainer:
             outputs = self.attention_model(
                 model_input.to(DEVICE), history_attention_mask.to(DEVICE)
             )
+            # res = self.class_model(
+            #     torch.concat(
+            #         [
+            #             outputs[history_rev_index.repeat(2).to(DEVICE)].to(
+            #                 dtype=torch.float32
+            #             ),
+            #             # self.attention_model.add_embedding(
+            #             self.train_news_embeddings[news_ind_pos_neg].to(
+            #                 DEVICE, dtype=torch.float32
+            #             ),
+            #             # ),
+            #         ],
+            #         dim=-1,
+            #     )
+            # ).squeeze()
 
             res = F.cosine_similarity(
                 outputs[history_rev_index.repeat(2).to(DEVICE)],
                 self.train_news_embeddings[news_ind_pos_neg].to(DEVICE),
             )
+            # res = F.cosine_similarity(
+            #     outputs[history_rev_index.repeat(2).to(DEVICE)],
+            #     self.attention_model.add_embedding(
+            #         self.train_news_embeddings[news_ind_pos_neg].to(DEVICE)
+            #     ),
+            # )
+            # res = F.cosine_similarity(
+            #     outputs[history_rev_index.unsqueeze(-1).to(DEVICE)],
+            #     self.train_news_embeddings[news_ind_pos_neg].to(DEVICE),
+            #     dim=-1,
+            # )
+            # res[news_ind_pos_neg < 0] = torch.tensor(float("-inf"))
 
             loss = self.loss_fn(
                 *torch.chunk(res, 2),
                 torch.tensor([1], device=DEVICE, dtype=torch.float32),
             )
+            # loss = self.loss_fn(
+            #     res, torch.zeros(len(res), device=DEVICE, dtype=torch.int64)
+            # )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(
                 self.attention_model.parameters(),
@@ -669,6 +737,8 @@ class AttentionReduceTrainer:
         max_neg_ratio: Optional[float] = None,
         max_pos_ratio: Optional[float] = None,
         rng: np.random.Generator = np.random.default_rng(1234),
+        train_query_news_embeddings: Optional[torch.Tensor] = None,
+        val_query_news_embeddings: Optional[torch.Tensor] = None,
     ):
         self.rng = rng
         self.log_dir = log_dir
@@ -685,8 +755,8 @@ class AttentionReduceTrainer:
         )
 
         self.loss_fn = torch.nn.MarginRankingLoss(2)
-        self.train_batch_size = get_attention_train_batch_size(
-            self.attention_model, self.optimizer
+        self.train_batch_size = (
+            get_attention_train_batch_size(self.attention_model, self.optimizer) // 2
         )
         print(f"Batch size for training Attention model is {self.train_batch_size}")
 
@@ -701,7 +771,11 @@ class AttentionReduceTrainer:
             max_pos_ratio=max_pos_ratio,
             rng=self.rng,
         )
-        self.train_news_embedding = train_news_embeddings
+        self.train_news_embeddings = train_news_embeddings
+        if isinstance(train_query_news_embeddings, torch.Tensor):
+            self.train_query_news_embeddings = train_query_news_embeddings
+        else:
+            self.train_query_news_embeddings = train_news_embeddings
 
         self.train_eval_score_func = partial(
             get_cos_sim_reduce_scores,
@@ -712,9 +786,15 @@ class AttentionReduceTrainer:
             news_embeddings=train_news_embeddings,
             attention_model=self.attention_model,
             reduce_model=self.reduce_model,
+            query_news_embeddings=self.train_query_news_embeddings,
         )
         self.train_labels = train_labels
         self.train_impression_len_list = train_impression_len_list
+
+        if isinstance(val_query_news_embeddings, torch.Tensor):
+            val_query_news_embeddings = val_query_news_embeddings
+        else:
+            val_query_news_embeddings = val_news_embeddings
 
         self.val_eval_score_func = partial(
             get_cos_sim_reduce_scores,
@@ -725,6 +805,7 @@ class AttentionReduceTrainer:
             news_embeddings=val_news_embeddings,
             attention_model=self.attention_model,
             reduce_model=self.reduce_model,
+            query_news_embeddings=val_query_news_embeddings,
         )
         self.val_labels = val_labels
         self.val_impression_len_list = val_impression_len_list
@@ -757,7 +838,7 @@ class AttentionReduceTrainer:
             self.optimizer.zero_grad()
             model_input = self.reduce_model(
                 (
-                    self.train_news_embedding[history_indices]
+                    self.train_query_news_embeddings[history_indices]
                     * history_attention_mask.unsqueeze(-1)
                 ).to(DEVICE)
             )
@@ -768,7 +849,7 @@ class AttentionReduceTrainer:
             res = F.cosine_similarity(
                 outputs[history_rev_index.repeat(2).to(DEVICE)],
                 self.reduce_model(
-                    self.train_news_embedding[news_ind_pos_neg].to(DEVICE)
+                    self.train_news_embeddings[news_ind_pos_neg].to(DEVICE)
                 ),
             )
 

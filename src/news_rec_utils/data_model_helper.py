@@ -48,9 +48,10 @@ def get_embeddings(
     if model_path == "nvidia/NV-Embed-v2":
         model = get_nvembed_model(model_path)
         text_list = [news_text_dict[i] for i in news_list]
-        query_embeds = get_nv_embeds(model, text_list, "query").detach().cpu()
+        # query_embeds = get_nv_embeds(model, text_list, "query").detach().cpu()
         passage_embeds = get_nv_embeds(model, text_list, "passage").detach().cpu()
-        return query_embeds, passage_embeds
+        return passage_embeds
+        # return query_embeds, passage_embeds
     model, tokenizer = get_model_and_tokenizer(model_path)
     text_collate_fn = partial(
         eval_collate_fn, tokenizer=tokenizer, max_len=NEWS_TEXT_MAXLEN
@@ -75,6 +76,7 @@ def get_embeddings(
             p=2,
             dim=1,
         )
+        # return passage_embeds
         return query_embeds, passage_embeds
     news_text_dataset = NewsTextDataset(news_list, news_text_dict)
     return get_embed_from_model(
@@ -87,7 +89,7 @@ def get_reduced_dim_embeds(embeddings: torch.Tensor, model: torch.nn.Module):
 
 
 def get_classification_preds(
-    news_embeddings: torch.Tensor, model: ClassificationHead
+    news_embeddings: torch.Tensor, model: torch.nn.Module
 ) -> np.ndarray:
     batch_size = 46336  # get_classification_inference_batch_size(model)
     print(f"Batch size for classification model inference {batch_size}")
@@ -97,7 +99,7 @@ def get_classification_preds(
 
 
 def get_classification_baseline_scores(
-    news_embeddings: torch.Tensor, model: ClassificationHead, news_rev_index: np.ndarray
+    news_embeddings: torch.Tensor, model: torch.nn.Module, news_rev_index: np.ndarray
 ) -> dict[str, np.ndarray]:
     classification_preds = get_classification_preds(news_embeddings, model)
     print("Classification inference scores obtained")
@@ -137,6 +139,7 @@ def get_cos_sim_reduce_scores(
     news_embeddings: torch.Tensor,
     attention_model: torch.nn.Module,
     reduce_model: torch.nn.Module,
+    query_news_embeddings: Optional[torch.Tensor] = None,
 ):
     assert len(history_len_list) == len(
         impression_len_list
@@ -145,9 +148,17 @@ def get_cos_sim_reduce_scores(
         news_rev_index
     ), "Number of impressions should match length of impression list"
     news_embeddings = get_reduced_dim_embeds(news_embeddings, reduce_model)
-    history_embeds = get_final_attention_eval(
-        history_rev_index, history_len_list, news_embeddings, attention_model
-    )
+    if isinstance(query_news_embeddings, torch.Tensor):
+        history_embeds = get_final_attention_eval(
+            history_rev_index, history_len_list, query_news_embeddings, attention_model
+        )
+    else:
+        history_embeds = get_final_attention_eval(
+            history_rev_index, history_len_list, news_embeddings, attention_model
+        )
+    # history_embeds = get_final_attention_eval(
+    #     history_rev_index, history_len_list, news_embeddings, attention_model
+    # )
     # history_embeds = get_reduced_dim_embeds(history_embeds, reduce_model)
     grouped_rev_index = group_items(news_rev_index, impression_len_list)
     result_list = []
@@ -185,12 +196,46 @@ def get_cos_sim_scores(
         )
     grouped_rev_index = group_items(news_rev_index, impression_len_list)
     result_list = []
-    for i, sub_list in enumerate(grouped_rev_index):
-        result_list.append(
-            F.cosine_similarity(
-                news_embeddings[sub_list].to(DEVICE), history_embeds[i].to(DEVICE)
+    with torch.no_grad():
+        for i, sub_list in enumerate(grouped_rev_index):
+            # print(history_embeds[i].unsqueeze(0).repeat(len(sub_list), 1).shape)
+            # print(model.add_embedding(news_embeddings[sub_list].to("cuda")).shape)
+            # result_list.append(
+            #     class_model(
+            #         torch.cat(
+            #             [
+            #                 history_embeds[i]
+            #                 .to(DEVICE, dtype=torch.float32)
+            #                 .unsqueeze(0)
+            #                 .repeat(len(sub_list), 1),
+            #                 # model.add_embedding(
+            #                 news_embeddings[sub_list].to(DEVICE, dtype=torch.float32),
+            #                 # ),
+            #             ],
+            #             dim=-1,
+            #         )
+            #     )
+            #     .squeeze()
+            #     .detach()
+            #     .cpu()
+            # )
+
+            result_list.append(
+                F.cosine_similarity(
+                    history_embeds[i].to(DEVICE),
+                    news_embeddings[sub_list].to(DEVICE),
+                )
+                .detach()
+                .cpu()
             )
-        )
+            # result_list.append(
+            #     F.cosine_similarity(
+            #         history_embeds[i].to(DEVICE),
+            #         model.add_embedding(news_embeddings[sub_list].to(DEVICE)),
+            #     )
+            #     .detach()
+            #     .cpu()
+            # )
     return torch.cat(result_list)
 
 
@@ -300,6 +345,7 @@ def get_final_only_reduce_attention_score(
     history_bool: pd.Series,
     attention_model: torch.nn.Module,
     reduce_model: torch.nn.Module,
+    query_news_embeddings: Optional[torch.Tensor] = None,
 ):
     scores = classification_score[news_rev_index]
     imp_len_list = list(impression_len_list)
@@ -313,6 +359,7 @@ def get_final_only_reduce_attention_score(
             news_embeddings,
             attention_model=attention_model,
             reduce_model=reduce_model,
+            query_news_embeddings=query_news_embeddings,
         )
         .detach()
         .cpu()

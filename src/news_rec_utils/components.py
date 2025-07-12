@@ -15,6 +15,8 @@ from .modeling_utils import (
     get_reducing_model,
     get_token_attn_model,
     get_latent_attention_model,
+    get_embed_wrapped_model,
+    ClassificationHead,
 )
 from .data_utils import (
     split_impressions_and_history,
@@ -41,26 +43,67 @@ load_dotenv()
 
 
 class TransformData(PipelineComponent):
-    required_keys = {"behaviors", "news_text_dict"}
+    required_keys = {
+        "behaviors",
+        "news_text_dict",
+        "news_category",
+        "news_subcategory",
+        "news_title_entity",
+        "news_abstract_entity",
+    }
 
     def _process_context(self, context_dict: dict[str, Any]) -> dict[str, Any]:
 
         behaviors = context_dict["behaviors"]
-        news_text_dict = context_dict["news_text_dict"]
-        new_context_dict = {
-            "ImpressionID": behaviors["ImpressionID"],
-            "news_text_dict": news_text_dict,
-        }
+        # news_text_dict = context_dict["news_text_dict"]
+        new_context_dict = context_dict.copy()
+
+        new_context_dict["ImpressionID"] = behaviors["ImpressionID"]
+        # "news_text_dict": news_text_dict,
+
         new_context_dict.update(
             split_impressions_and_history(
                 behaviors["Impressions"], behaviors["History"]
             )
         )
         new_context_dict["history_bool"] = behaviors["History"].notna()
-        if "news_dataset" in context_dict:
-            new_context_dict["news_dataset"] = context_dict["news_dataset"]
-        if "db_name" in context_dict:
-            new_context_dict["db_name"] = context_dict["db_name"]
+
+        new_context_dict["title_entity_embed"] = torch.stack(
+            [
+                torch.tensor(context_dict["news_title_entity"][i], dtype=torch.float32)
+                for i in new_context_dict["news_list"]
+            ]
+        )
+        new_context_dict["abstract_entity_embed"] = torch.stack(
+            [
+                torch.tensor(
+                    context_dict["news_abstract_entity"][i], dtype=torch.float32
+                )
+                for i in new_context_dict["news_list"]
+            ],
+        )
+        new_context_dict["cat_indices"] = torch.tensor(
+            [context_dict["news_category"][i] for i in new_context_dict["news_list"]],
+            dtype=torch.int32,
+        ).unsqueeze(dim=-1)
+        print("news length len", len(new_context_dict["news_list"]))
+        new_context_dict["subcat_indices"] = torch.tensor(
+            [
+                context_dict["news_subcategory"][i]
+                for i in new_context_dict["news_list"]
+            ],
+            dtype=torch.int32,
+        ).unsqueeze(dim=-1)
+
+        new_context_dict.pop("behaviors")
+        new_context_dict.pop("news_title_entity")
+        new_context_dict.pop("news_abstract_entity")
+        new_context_dict.pop("news_category")
+        new_context_dict.pop("news_subcategory")
+        # if "news_dataset" in context_dict:
+        #     new_context_dict["news_dataset"] = context_dict["news_dataset"]
+        # if "db_name" in context_dict:
+        #     new_context_dict["db_name"] = context_dict["db_name"]
         return new_context_dict
 
     def transform(self, context_dict: dict[str, Any]) -> dict[str, Any]:
@@ -98,6 +141,36 @@ class EmbeddingsComponent(PipelineComponent):
                 new_context_dict["news_list"],
                 new_context_dict["news_text_dict"],
             )
+            # title_embed = get_embeddings(
+            #     self.model_path,
+            #     new_context_dict["news_list"],
+            #     new_context_dict["news_title_dict"],
+            # )
+            # print("title_embed shape", title_embed.shape)
+            # abstract_indices = [
+            #     i
+            #     for i, x in enumerate(new_context_dict["news_list"])
+            #     if x in new_context_dict["news_abstract_dict"]
+            # ]
+            # abstract_embed = get_embeddings(
+            #     self.model_path,
+            #     new_context_dict["news_list"][abstract_indices],
+            #     new_context_dict["news_abstract_dict"],
+            # )
+
+            # abstract_full = torch.zeros_like(title_embed)
+            # abstract_full[abstract_indices] = abstract_embed
+            # print("abstract embed shape", abstract_embed.shape)
+            # print("abstract full shape", abstract_full.shape)
+            # new_context_dict["news_embeddings"] = torch.concat(
+            #     [title_embed, abstract_full], dim=-1
+            # )
+            # print("final shape", new_context_dict["news_embeddings"].shape)
+            if isinstance(new_context_dict["news_embeddings"], tuple):
+                (
+                    new_context_dict["query_news_embeddings"],
+                    new_context_dict["news_embeddings"],
+                ) = new_context_dict["news_embeddings"]
 
         return new_context_dict
 
@@ -166,12 +239,22 @@ class LoadEmbeddingComponent(PipelineComponent):
         context_dict["news_embeddings"] = torch.load(
             self.save_dir / f"{context_dict['news_dataset'].value}.pt",
             weights_only=True,
-        )
+        )  # [:, :1024]
+        # context_dict["news_embeddings"] = (
+        #     context_dict["news_embeddings"][:9701]
+        #     if len(context_dict["news_embeddings"]) > 50000
+        #     else context_dict["news_embeddings"][:7231]
+        # )
         if (self.save_dir / f"query_{context_dict['news_dataset'].value}.pt").exists():
             context_dict["query_news_embeddings"] = torch.load(
                 self.save_dir / f"query_{context_dict['news_dataset'].value}.pt",
                 weights_only=True,
             )
+            # context_dict["query_news_embeddings"] = (
+            #     context_dict["query_news_embeddings"][:9701]
+            #     if len(context_dict["query_news_embeddings"]) > 50000
+            #     else context_dict["query_news_embeddings"][:7231]
+            # )
         return context_dict
 
 
@@ -189,6 +272,7 @@ class ClassificationComponent(PipelineComponent):
         rng=np.random.default_rng(1234),
     ):
         self.model = get_classification_head(model_path)
+        # self.model = get_embed_wrapped_model(get_classification_head(model_path))
         if model_path is None:
             self.model_trained = False
         else:
@@ -205,6 +289,16 @@ class ClassificationComponent(PipelineComponent):
         new_context_dict.update(
             get_classification_baseline_scores(
                 new_context_dict["news_embeddings"],
+                # torch.cat(
+                #     [
+                #         context_dict["news_embeddings"],
+                #         # context_dict["title_entity_embed"],
+                #         # context_dict["abstract_entity_embed"],
+                #         context_dict["cat_indices"],
+                #         # context_dict["subcat_indices"],
+                #     ],
+                #     dim=-1,
+                # ),
                 self.model,
                 new_context_dict["impression_rev_ind_array"][0],
             )
@@ -222,26 +316,60 @@ class ClassificationComponent(PipelineComponent):
         assert val_context_dict, "We need the validation data"
         check_req_keys(self.train_required_keys, context_dict)
         check_req_keys(self.train_required_keys, val_context_dict)
+        # print("news_embed", val_context_dict["news_embeddings"].shape)
+        # print("title_entity_embed", val_context_dict["title_entity_embed"].shape)
+        # print("abstract_entity_embed", val_context_dict["abstract_entity_embed"].shape)
+        # print("cat_ind", val_context_dict["cat_indices"].shape)
+        # print("subcat_ind", val_context_dict["subcat_indices"].shape)
+        print("News Embed shape", context_dict["news_embeddings"].shape)
+        print("cat ind shape", context_dict["cat_indices"].shape)
         classification_trainer = ClassificationModelTrainer(
             self.model,
             context_dict["news_embeddings"],
+            # torch.cat(
+            #     [
+            #         context_dict["news_embeddings"],
+            #         # context_dict["title_entity_embed"],
+            #         # context_dict["abstract_entity_embed"],
+            #         context_dict["cat_indices"],
+            #         # context_dict["subcat_indices"],
+            #     ],
+            #     dim=-1,
+            # ),
             context_dict["impression_rev_ind_array"][0],
             context_dict["impression_len_list"],
             context_dict["labels"],
             val_context_dict["news_embeddings"],
+            # torch.cat(
+            #     [
+            #         val_context_dict["news_embeddings"],
+            #         # val_context_dict["title_entity_embed"],
+            #         # val_context_dict["abstract_entity_embed"],
+            #         val_context_dict["cat_indices"],
+            #         # val_context_dict["subcat_indices"],
+            #     ],
+            #     dim=-1,
+            # ),
             val_context_dict["impression_rev_ind_array"][0],
             val_context_dict["impression_len_list"],
             val_context_dict["labels"],
             self.log_dir,
             self.ckpt_dir,
             self.exp_name,
-            self.rng,
+            rng=self.rng,
+            num_neg_per_pos=5,
         )
         classification_trainer.train(self.num_epochs)
         if self.ckpt_dir:
-            self.model = get_classification_head(
-                self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
+            self.model.load_state_dict(
+                torch.load(
+                    self.ckpt_dir / f"Best_model_{self.exp_name}.pt", weights_only=True
+                )
             )
+            self.model.to(device="cuda")
+            # self.model = get_classification_head(
+            #     self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
+            # )
 
 
 class AttentionWeightComponent(PipelineComponent):
@@ -371,7 +499,8 @@ class AttentionComponent(PipelineComponent):
         max_pos_ratio: Optional[float] = None,
         rng=np.random.default_rng(1234),
     ):
-        self.attention_model = get_final_attention_model(attention_model_path)
+        # self.attention_model = get_final_attention_model(attention_model_path)
+        self.attention_model = get_new_attention_model(attention_model_path)
         # self.attention_model = get_latent_attention_model(attention_model_path)
         self.num_epochs = num_epochs
         self.exp_name = exp_name
@@ -391,10 +520,30 @@ class AttentionComponent(PipelineComponent):
                 new_context_dict["impression_rev_ind_array"][0],
                 new_context_dict["impression_len_list"],
                 new_context_dict["news_embeddings"],
+                # torch.cat(
+                #     [
+                #         context_dict["news_embeddings"],
+                #         # context_dict["title_entity_embed"],
+                #         # context_dict["abstract_entity_embed"],
+                #         context_dict["cat_indices"],
+                #         # context_dict["subcat_indices"],
+                #     ],
+                #     dim=-1,
+                # ),
                 new_context_dict["classification_preds"],
                 new_context_dict["history_bool"],
                 self.attention_model,
-                query_news_embeddings=new_context_dict.get("query_news_embeddings"),
+                # query_news_embeddings=new_context_dict.get("query_news_embeddings"),
+                # query_news_embeddings=torch.cat(
+                #     [
+                #         context_dict["query_news_embeddings"],
+                #         context_dict["title_entity_embed"],
+                #         context_dict["abstract_entity_embed"],
+                #         context_dict["cat_indices"],
+                #         context_dict["subcat_indices"],
+                #     ],
+                #     dim=-1,
+                # ),
             )
         )
         return new_context_dict
@@ -421,6 +570,16 @@ class AttentionComponent(PipelineComponent):
                 context_dict["history_bool"]
             ],
             train_news_embeddings=context_dict["news_embeddings"],
+            # train_news_embeddings=torch.cat(
+            #     [
+            #         context_dict["news_embeddings"],
+            #         # context_dict["title_entity_embed"],
+            #         # context_dict["abstract_entity_embed"],
+            #         context_dict["cat_indices"],
+            #         # context_dict["subcat_indices"],
+            #     ],
+            #     dim=-1,
+            # ),
             train_labels=context_dict["labels"][context_dict["history_bool"]],
             val_history_rev_index=val_context_dict["history_rev_ind_array"][0],
             val_history_len_list=val_context_dict["history_len_list"],
@@ -431,6 +590,16 @@ class AttentionComponent(PipelineComponent):
                 val_context_dict["history_bool"]
             ],
             val_news_embeddings=val_context_dict["news_embeddings"],
+            # val_news_embeddings=torch.cat(
+            #     [
+            #         val_context_dict["news_embeddings"],
+            #         # val_context_dict["title_entity_embed"],
+            #         # val_context_dict["abstract_entity_embed"],
+            #         val_context_dict["cat_indices"],
+            #         # val_context_dict["subcat_indices"],
+            #     ],
+            #     dim=-1,
+            # ),
             val_labels=val_context_dict["labels"][val_context_dict["history_bool"]],
             log_dir=self.log_dir,
             ckpt_dir=self.ckpt_dir,
@@ -438,17 +607,43 @@ class AttentionComponent(PipelineComponent):
             max_neg_ratio=self.max_neg_ratio,
             max_pos_ratio=self.max_pos_ratio,
             rng=self.rng,
-            train_query_news_embeddings=context_dict.get("query_news_embeddings"),
-            val_query_news_embeddings=val_context_dict.get("query_news_embeddings"),
+            # train_query_news_embeddings=context_dict.get("query_news_embeddings"),
+            # val_query_news_embeddings=val_context_dict.get("query_news_embeddings"),
+            # train_query_news_embeddings=torch.cat(
+            #     [
+            #         context_dict["query_news_embeddings"],
+            #         context_dict["title_entity_embed"],
+            #         context_dict["abstract_entity_embed"],
+            #         context_dict["cat_indices"],
+            #         context_dict["subcat_indices"],
+            #     ],
+            #     dim=-1,
+            # ),
+            # val_query_news_embeddings=torch.cat(
+            #     [
+            #         val_context_dict["query_news_embeddings"],
+            #         val_context_dict["title_entity_embed"],
+            #         val_context_dict["abstract_entity_embed"],
+            #         val_context_dict["cat_indices"],
+            #         val_context_dict["subcat_indices"],
+            #     ],
+            #     dim=-1,
+            # ),
         )
         attention_weight_trainer.train(self.num_epochs)
         if self.ckpt_dir:
-            self.attention_model = get_final_attention_model(
-                self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
+            self.attention_model.load_state_dict(
+                torch.load(
+                    self.ckpt_dir / f"Best_model_{self.exp_name}.pt", weights_only=True
+                )
             )
+            self.attention_model.to(device="cuda")
+            # self.attention_model = get_final_attention_model(
+            #     self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
+            # )
 
 
-class NewAttentionReduceComponent(PipelineComponent):
+class AttentionReduceComponent(PipelineComponent):
     required_keys = {
         "news_embeddings",
         "impression_rev_ind_array",
@@ -475,7 +670,9 @@ class NewAttentionReduceComponent(PipelineComponent):
         max_pos_ratio: Optional[float] = None,
         rng=np.random.default_rng(1234),
     ):
-        self.attention_model = get_new_attention_model(attention_model_path)
+        # self.attention_model = get_new_attention_model(attention_model_path)
+        self.attention_model = get_final_attention_model(attention_model_path)
+        # self.attention_model = get_latent_attention_model(attention_model_path)
         self.reduce_model = get_reducing_model(reduce_model_path)
         self.num_epochs = num_epochs
         self.exp_name = exp_name
@@ -500,6 +697,7 @@ class NewAttentionReduceComponent(PipelineComponent):
                 history_bool=new_context_dict["history_bool"],
                 attention_model=self.attention_model,
                 reduce_model=self.reduce_model,
+                query_news_embeddings=new_context_dict.get("query_news_embeddings"),
             )
         )
         return new_context_dict
@@ -545,10 +743,12 @@ class NewAttentionReduceComponent(PipelineComponent):
             max_neg_ratio=self.max_neg_ratio,
             max_pos_ratio=self.max_pos_ratio,
             rng=self.rng,
+            train_query_news_embeddings=context_dict.get("query_news_embeddings"),
+            val_query_news_embeddings=val_context_dict.get("query_news_embeddings"),
         )
         attention_weight_trainer.train(self.num_epochs)
         if self.ckpt_dir:
-            self.attention_model = get_new_attention_model(
+            self.attention_model = get_final_attention_model(
                 self.ckpt_dir / f"Best_model_{self.exp_name}.pt"
             )
         if self.reduce_ckpt_dir:

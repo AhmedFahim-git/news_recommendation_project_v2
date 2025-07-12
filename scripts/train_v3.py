@@ -11,7 +11,7 @@ from news_rec_utils.components import (
     NewAttentionComponent,
     AttentionComponent,
     LoadEmbeddingComponent,
-    NewAttentionReduceComponent,
+    AttentionReduceComponent,
     StoreEmbeddingsComponent,
     AttentionAttentionComponent,
 )
@@ -33,7 +33,7 @@ def main():
     # db_name = "/content/drive/MyDrive/my_db/mydb_dev.sqlite"
 
     rng = np.random.default_rng(1234)
-    train_behaviors, train_news_text_dict = load_dataset(
+    train_behaviors, train_news_feat_dict = load_dataset(
         data_dir,
         NewsDataset.MINDsmall_train,
         data_subset=DataSubset.WITH_HISTORY,
@@ -127,7 +127,7 @@ def main():
         context_dict={
             "news_dataset": NewsDataset.MINDsmall_train,
             "behaviors": train_behaviors,
-            "news_text_dict": train_news_text_dict,
+            **train_news_feat_dict,
         },
     )
     # context_dict, val_context_dict = train_pipeline.train(

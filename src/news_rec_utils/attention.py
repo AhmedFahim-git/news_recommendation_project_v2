@@ -19,7 +19,7 @@ from torch import nn
 
 from transformers.activations import ACT2FN
 
-from .config import EMBEDDING_DIM, NUM_HIDDEN_LAYERS
+from .config import EMBEDDING_DIM, NUM_HIDDEN_LAYERS, REDUCED_DIM, IMPRESSION_MAXLEN
 
 
 # Adapted from https://huggingface.co/Alibaba-NLP/new-impl/blob/main/modeling.py
@@ -27,7 +27,10 @@ from .config import EMBEDDING_DIM, NUM_HIDDEN_LAYERS
 
 class MyAttention(nn.Module):
     def __init__(
-        self, hidden_size=EMBEDDING_DIM, num_attention_heads=12, pack_qkv=True
+        self,
+        hidden_size=EMBEDDING_DIM,
+        num_attention_heads=8,
+        pack_qkv=True,
     ):
         super().__init__()
         if hidden_size % num_attention_heads != 0:
@@ -38,6 +41,11 @@ class MyAttention(nn.Module):
 
         self.hidden_size = hidden_size
         self.num_attention_heads = num_attention_heads
+        # if EMBEDDING_DIM == 4096:
+        #     self.attention_head_size = int(hidden_size / (num_attention_heads * 4))
+        # elif EMBEDDING_DIM == 3072:
+        #     self.attention_head_size = int(hidden_size / (num_attention_heads * 3))
+        # else:
         self.attention_head_size = int(hidden_size / num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
@@ -143,7 +151,7 @@ class GatedMLP(nn.Module):
 class MyLayer(nn.Module):
     def __init__(
         self,
-        hidden_size=EMBEDDING_DIM,
+        hidden_size=REDUCED_DIM,
         layer_norm_eps=1e-12,
         residual_connection=False,
         hidden_dropout_prob=0.1,
@@ -187,7 +195,7 @@ class MyLayer(nn.Module):
 
 
 class MyEncoder(nn.Module):
-    def __init__(self, hidden_size=EMBEDDING_DIM, num_hidden_layers=NUM_HIDDEN_LAYERS):
+    def __init__(self, hidden_size=REDUCED_DIM, num_hidden_layers=NUM_HIDDEN_LAYERS):
         super().__init__()
         self.layer = nn.ModuleList(
             [MyLayer(hidden_size=hidden_size) for _ in range(num_hidden_layers)]
@@ -200,22 +208,72 @@ class MyEncoder(nn.Module):
 
 
 class NewAttention(torch.nn.Module):
-    def __init__(self, hidden_size=EMBEDDING_DIM, num_hidden_layers=NUM_HIDDEN_LAYERS):
+    def __init__(self, hidden_size=REDUCED_DIM, num_hidden_layers=NUM_HIDDEN_LAYERS):
         super().__init__()
+        # self.cat_embed = torch.nn.Embedding(15, 128)
+
+        # self.alpha = torch.nn.Parameter(torch.tensor(99999.9))
+        # self.alpha_2 = torch.nn.Parameter(
+        #     torch.ones(IMPRESSION_MAXLEN, dtype=torch.float32)
+        # )
+
+        # self.pos_emb_layer = torch.nn.Embedding(IMPRESSION_MAXLEN, 100)
+        # self.in_layer = torch.nn.Linear(EMBEDDING_DIM + 100, hidden_size)
+
+        # self.in_layer = torch.nn.Linear(EMBEDDING_DIM, REDUCED_DIM)
+
         self.encoder = MyEncoder(
             hidden_size=hidden_size, num_hidden_layers=num_hidden_layers
         )
         self.linear1 = torch.nn.Linear(hidden_size, hidden_size)
+
+        # self.out_layer = torch.nn.Linear(REDUCED_DIM, EMBEDDING_DIM)
         # self.final_dense = nn.Linear(hidden_size, output_dim, bias=False)
 
         # Initialize weights and apply final processing
         # self.post_init()
 
     def forward(self, embeddings, attention_mask):
-        res = self.encoder(embeddings, attention_mask)
+        # embeddings = self.add_embedding(embeddings)
+
+        # embeddings = embeddings[:, :IMPRESSION_MAXLEN]
+        # attention_mask = attention_mask[:, :IMPRESSION_MAXLEN]
+
+        # pos_weight = (
+        #     torch.sigmoid(self.alpha)
+        #     .pow(torch.arange(embeddings.shape[1], device=DEVICE))
+        #     .unsqueeze(0)
+        #     .unsqueeze(-1)
+        # )
+        # pos_weight = (
+        #     torch.sigmoid(self.alpha_2[: embeddings.shape[1]])
+        #     .unsqueeze(0)
+        #     .unsqueeze(-1)
+        # )
+        # embeddings = embeddings * pos_weight
+
+        # embeddings = torch.cat(
+        #     [
+        #         embeddings,
+        #         self.pos_emb_layer(torch.arange(embeddings.shape[1], device=DEVICE))
+        #         .unsqueeze(0)
+        #         .expand(embeddings.shape[0], -1, -1),
+        #     ],
+        #     dim=-1,
+        # )
+
+        # x = self.in_layer(embeddings)
+        x = embeddings
+        res = self.encoder(x, attention_mask)
         weights = self.linear1(res)
         weights = torch.exp(weights) * attention_mask.unsqueeze(-1)
         weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-10)
+        # return self.out_layer((res * weights).sum(dim=1))
         return (res * weights).sum(dim=1)
         # res = self.final_dense(res)
         # return BaseModelOutput(last_hidden_state=res)
+
+    def add_embedding(self, embeddings):
+        cat_embeds = self.cat_embed(embeddings[..., -1].to(dtype=torch.int32))
+        # subcat_embeds = self.subcat_embed(embeddings[..., -1].to(dtype=torch.int32))
+        return torch.cat([embeddings[..., :-1], cat_embeds], dim=-1)
